@@ -1,0 +1,18 @@
+llm:
+  provider: openai
+  model: gpt-4o
+  temperature: 0.7
+  max_tokens: 4096
+
+agent:
+  max_iterations: 10
+  max_orchestration_depth: 3
+
+storage:
+  sqlite_path: data/agentgw.db
+  chroma_path: data/chroma
+  log_dir: data/logs
+
+skills_dir: skills
+tools_modules:
+  - agentgw.tools

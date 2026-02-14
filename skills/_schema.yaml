@@ -1,0 +1,21 @@
+# SKILL YAML Schema Reference
+# This file documents the expected structure of skill definition files.
+# It is not loaded by the application.
+
+# --- Required Fields ---
+# name: string          - Unique identifier for the skill
+# description: string   - Human-readable description (used by planner for routing)
+# system_prompt: string - The agent's system prompt when using this skill
+
+# --- Optional Fields ---
+# tools: list[string]        - Tool names this skill can use (default: [])
+# model: string              - Override LLM model (default: use global config)
+# temperature: float         - LLM temperature 0.0-2.0 (default: 0.7)
+# max_iterations: int        - Agent loop guard (default: 10)
+# tags: list[string]         - For RAG filtering and planner routing (default: [])
+# examples: list[dict]       - Few-shot examples with 'user' and 'assistant' keys
+# sub_agents: list[string]   - Skill names this agent can delegate to (default: [])
+# rag_context:               - Auto-inject RAG results into context
+#   enabled: bool            - Whether to auto-inject (default: false)
+#   tags: list[string]       - RAG tags to filter by
+#   top_k: int               - Number of results to inject (default: 3)

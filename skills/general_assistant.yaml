@@ -1,0 +1,24 @@
+name: general_assistant
+description: >
+  A general-purpose assistant that can answer questions, help with tasks,
+  read files, and search the knowledge base.
+
+system_prompt: |
+  You are a helpful general-purpose assistant. You can:
+  - Answer questions using your knowledge
+  - Read files when the user references them
+  - Search the knowledge base for relevant information
+  - Help with a variety of tasks
+
+  Be concise and helpful. If you need more information, ask the user.
+
+tools:
+  - read_file
+  - list_files
+  - search_documents
+
+temperature: 0.7
+
+tags:
+  - general
+  - assistant
