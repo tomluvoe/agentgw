@@ -12,10 +12,11 @@
 # model: string              - Override LLM model (default: use global config)
 # temperature: float         - LLM temperature 0.0-2.0 (default: 0.7)
 # max_iterations: int        - Agent loop guard (default: 10)
-# tags: list[string]         - For RAG filtering and planner routing (default: [])
+# tags: list[string]         - For metadata and planner routing (default: [])
 # examples: list[dict]       - Few-shot examples with 'user' and 'assistant' keys
 # sub_agents: list[string]   - Skill names this agent can delegate to (default: [])
 # rag_context:               - Auto-inject RAG results into context
 #   enabled: bool            - Whether to auto-inject (default: false)
-#   tags: list[string]       - RAG tags to filter by
+#   skills: list[string]     - Filter by skill names (default: [current skill name])
+#   tags: list[string]       - Additional tag filtering (default: [])
 #   top_k: int               - Number of results to inject (default: 3)

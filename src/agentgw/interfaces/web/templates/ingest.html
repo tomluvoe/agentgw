@@ -12,6 +12,11 @@
             <input type="text" id="ingest-source" placeholder="e.g., meeting_notes_2024.txt" required>
         </div>
         <div class="form-group">
+            <label for="ingest-skills">Skills (comma-separated, empty = all skills)</label>
+            <input type="text" id="ingest-skills" placeholder="e.g., general_assistant, summarize_document">
+            <small style="color: #7aa2f7;">Leave empty to make this document available to all agents</small>
+        </div>
+        <div class="form-group">
             <label for="ingest-tags">Tags (comma-separated)</label>
             <input type="text" id="ingest-tags" placeholder="e.g., meetings, project-x, notes">
         </div>
@@ -36,11 +41,13 @@ async function submitIngest(e) {
     const result = document.getElementById('ingest-result');
     const text = document.getElementById('ingest-text').value.trim();
     const source = document.getElementById('ingest-source').value.trim();
+    const skillsStr = document.getElementById('ingest-skills').value.trim();
     const tagsStr = document.getElementById('ingest-tags').value.trim();
     const collection = document.getElementById('ingest-collection').value.trim() || 'default';
 
     if (!text) return;
 
+    const skills = skillsStr ? skillsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
     const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
 
     result.style.display = 'block';
@@ -51,10 +58,11 @@ async function submitIngest(e) {
         const resp = await fetch('/api/ingest', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({text, source, tags, collection})
+            body: JSON.stringify({text, source, skills, tags, collection})
         });
         const data = await resp.json();
-        result.innerHTML = `Ingested <strong>${data.chunks_created}</strong> chunks into collection <strong>${collection}</strong>.`;
+        const skillsMsg = skills.length > 0 ? ` (for skills: ${skills.join(', ')})` : ' (available to all skills)';
+        result.innerHTML = `Ingested <strong>${data.chunks_created}</strong> chunks into collection <strong>${collection}</strong>${skillsMsg}.`;
         result.className = 'ingest-result success';
         document.getElementById('ingest-text').value = '';
     } catch (err) {

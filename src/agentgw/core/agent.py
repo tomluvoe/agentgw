@@ -158,7 +158,10 @@ class AgentLoop:
         # Auto-inject RAG context if configured
         rag_ctx = self._skill.rag_context
         if rag_ctx and rag_ctx.get("enabled") and self._rag_store:
-            rag_tags = rag_ctx.get("tags", self._skill.tags)
+            # Auto-filter by current skill name (documents with empty skills match all)
+            # Users can override with explicit skill names in rag_context.skills
+            rag_skills = rag_ctx.get("skills", [self._skill.name])
+            rag_tags = rag_ctx.get("tags", [])
             top_k = rag_ctx.get("top_k", 3)
             # Use the last user message as query
             last_user = None
@@ -169,6 +172,7 @@ class AgentLoop:
             if last_user:
                 results = await self._rag_store.search(
                     query=last_user,
+                    skills=rag_skills,
                     tags=rag_tags,
                     top_k=top_k,
                 )

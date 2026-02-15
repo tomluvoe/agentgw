@@ -63,12 +63,52 @@ During an interactive chat session:
 
 ### RAG Ingestion
 
+Documents can be associated with specific skills (or left available to all):
+
 ```bash
-# Ingest a document with tags
-agentgw ingest ./docs/api-reference.md --tags api --tags reference
+# Ingest for specific skills only
+agentgw ingest ./python-guide.md --skills code_assistant --skills general_assistant
+
+# Ingest available to all skills (default)
+agentgw ingest ./company-policies.md
+
+# Combine skill filtering with tags
+agentgw ingest ./api-reference.md --skills code_assistant --tags api --tags reference
 
 # Ingest into a specific collection
 agentgw ingest ./notes.txt --collection project-x --tags notes
+```
+
+**How skill filtering works:**
+- Documents with `--skills` are only accessible to those specific skills
+- Documents without `--skills` are available to **all** agents
+- Tags provide additional categorization within a skill's scope
+
+### Document Management
+
+View and manage ingested documents:
+
+```bash
+# List all documents
+agentgw documents
+
+# Filter by skill
+agentgw documents --skills code_assistant
+
+# Filter by source name
+agentgw documents --source python-guide
+
+# Limit results
+agentgw documents --limit 50
+
+# Delete all chunks from a source
+agentgw delete-documents --source python-guide.md
+
+# Delete specific document by ID
+agentgw delete-documents --id abc-123-def --id xyz-789-ghi
+
+# Specify collection
+agentgw documents --collection my-collection
 ```
 
 ### Session Management
@@ -98,7 +138,8 @@ The web UI provides:
 - Skill selection with descriptions and tags
 - Smart Router — describe a task and the planner picks the best skill
 - Real-time streaming chat with session persistence
-- Document ingestion with tagging
+- Document ingestion with per-skill filtering and tagging
+- Document browser with search, filtering, and deletion
 - Session resume from the home page
 - Feedback buttons on responses
 
@@ -107,13 +148,15 @@ The web UI provides:
 All web UI functionality is available via JSON endpoints:
 
 ```
-POST /api/chat          — SSE streaming chat (send message, receive chunks)
-POST /api/route         — Planner agent (classify intent, recommend skill)
-POST /api/ingest        — Add text to RAG knowledge base
-POST /api/feedback      — Submit +1/-1 feedback on a response
-GET  /api/skills        — List available skills
-GET  /api/sessions      — List recent sessions
-GET  /api/sessions/{id}/messages — Get messages for a session
+POST   /api/chat          — SSE streaming chat (send message, receive chunks)
+POST   /api/route         — Planner agent (classify intent, recommend skill)
+POST   /api/ingest        — Add text to RAG knowledge base
+GET    /api/documents     — List ingested documents (filter by skills/source)
+DELETE /api/documents     — Delete documents by source or IDs
+POST   /api/feedback      — Submit +1/-1 feedback on a response
+GET    /api/skills        — List available skills
+GET    /api/sessions      — List recent sessions
+GET    /api/sessions/{id}/messages — Get messages for a session
 ```
 
 ## Creating Skills
@@ -138,10 +181,11 @@ tags:
   - my-tag
   - another-tag
 
-# Optional: auto-inject RAG results matching these tags
+# Optional: auto-inject RAG results for this skill
 rag_context:
   enabled: true
-  tags: ["my-tag"]
+  skills: ["my_skill"]  # Defaults to [current skill name]
+  tags: ["my-tag"]      # Additional tag filtering
   top_k: 3
 
 # Optional: few-shot examples
@@ -170,6 +214,24 @@ examples:
 | `examples` | `[]` | Few-shot examples injected into context |
 | `sub_agents` | `[]` | Skills this agent can delegate to (future) |
 | `rag_context` | `null` | Auto-inject RAG results into system prompt |
+
+### RAG Context Auto-Injection
+
+When `rag_context.enabled` is true, the agent automatically searches the knowledge base before each turn and injects relevant results into its context:
+
+```yaml
+rag_context:
+  enabled: true
+  skills: ["my_skill"]     # Filter by skill (defaults to current skill)
+  tags: ["documentation"]  # Additional tag filtering
+  top_k: 3                 # Number of chunks to inject
+```
+
+**Skill-based filtering:**
+- By default, searches only documents associated with the current skill
+- Documents ingested with `--skills my_skill` are only available to that skill
+- Documents ingested without `--skills` are available to **all** skills
+- Override with explicit `skills: []` to search across all documents
 
 ## Creating Tools
 

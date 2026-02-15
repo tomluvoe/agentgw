@@ -30,6 +30,7 @@ class ChatRequest(BaseModel):
 class IngestRequest(BaseModel):
     text: str
     source: str = "web_upload"
+    skills: list[str] | None = None
     tags: list[str] | None = None
     collection: str = "default"
 
@@ -95,6 +96,10 @@ def create_app(service: AgentService | None = None) -> FastAPI:
     async def ingest_page(request: Request):
         return templates.TemplateResponse(request, "ingest.html")
 
+    @app.get("/documents", response_class=HTMLResponse)
+    async def documents_page(request: Request):
+        return templates.TemplateResponse(request, "documents.html")
+
     # -----------------------------------------------------------------------
     # API routes
     # -----------------------------------------------------------------------
@@ -145,10 +150,45 @@ def create_app(service: AgentService | None = None) -> FastAPI:
         """Ingest text into the RAG knowledge base."""
         chunk_ids = await _service.rag_store.ingest(
             text=req.text,
-            metadata={"source": req.source, "tags": req.tags or []},
+            metadata={"source": req.source, "skills": req.skills or [], "tags": req.tags or []},
             collection=req.collection,
         )
         return {"status": "ok", "chunks_created": len(chunk_ids)}
+
+    @app.get("/api/documents")
+    async def api_list_documents(
+        collection: str = "default",
+        skills: str | None = None,
+        source: str | None = None,
+        limit: int = 100,
+    ):
+        """List ingested documents."""
+        skill_list = [s.strip() for s in skills.split(",")] if skills else None
+        docs = await _service.rag_store.list_documents(
+            collection=collection,
+            skills=skill_list,
+            source=source,
+            limit=limit,
+        )
+        return {"documents": docs, "count": len(docs)}
+
+    @app.delete("/api/documents")
+    async def api_delete_documents(
+        collection: str = "default",
+        source: str | None = None,
+        ids: str | None = None,
+    ):
+        """Delete documents from the knowledge base."""
+        if source:
+            count = await _service.rag_store.delete_by_source(source, collection)
+            return {"status": "ok", "deleted": count}
+        elif ids:
+            id_list = [i.strip() for i in ids.split(",")]
+            await _service.rag_store.delete(id_list, collection)
+            return {"status": "ok", "deleted": len(id_list)}
+        else:
+            return {"status": "error", "message": "Must specify either 'source' or 'ids'"}
+
 
     @app.post("/api/feedback")
     async def api_feedback(req: FeedbackRequest):

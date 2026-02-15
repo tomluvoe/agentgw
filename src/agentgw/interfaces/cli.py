@@ -179,25 +179,105 @@ def list_skills():
 @cli.command()
 @click.argument("file_path", type=click.Path(exists=True))
 @click.option("--collection", "-c", default="default", help="ChromaDB collection name")
+@click.option("--skills", "-s", multiple=True, help="Skill names (empty = all skills)")
 @click.option("--tags", "-t", multiple=True, help="Tags for the document")
 @click.option("--chunk-size", default=512, help="Characters per chunk")
-def ingest(file_path: str, collection: str, tags: tuple[str, ...], chunk_size: int):
+def ingest(file_path: str, collection: str, skills: tuple[str, ...], tags: tuple[str, ...], chunk_size: int):
     """Ingest a document into the RAG knowledge base."""
-    asyncio.run(_ingest(file_path, collection, list(tags), chunk_size))
+    asyncio.run(_ingest(file_path, collection, list(skills), list(tags), chunk_size))
 
 
-async def _ingest(file_path: str, collection: str, tags: list[str], chunk_size: int):
+async def _ingest(file_path: str, collection: str, skills: list[str], tags: list[str], chunk_size: int):
     svc = _get_service(require_llm=False)
     text = Path(file_path).read_text(encoding="utf-8", errors="replace")
     chunk_ids = await svc.rag_store.ingest(
         text=text,
-        metadata={"source": file_path, "tags": tags},
+        metadata={"source": file_path, "skills": skills, "tags": tags},
         collection=collection,
         chunk_size=chunk_size,
     )
     click.echo(f"Ingested {len(chunk_ids)} chunks from '{file_path}' into collection '{collection}'")
+    if skills:
+        click.echo(f"Skills: {', '.join(skills)}")
+    elif not skills:
+        click.echo("Skills: (available to all)")
     if tags:
         click.echo(f"Tags: {', '.join(tags)}")
+
+
+# ---------------------------------------------------------------------------
+# documents — list ingested documents
+# ---------------------------------------------------------------------------
+
+@cli.command("documents")
+@click.option("--collection", "-c", default="default", help="Collection to list from")
+@click.option("--skills", "-s", multiple=True, help="Filter by skill name")
+@click.option("--source", default=None, help="Filter by source (substring match)")
+@click.option("--limit", "-n", default=100, help="Maximum number to display")
+def list_documents(collection: str, skills: tuple[str, ...], source: str | None, limit: int):
+    """List ingested RAG documents."""
+    asyncio.run(_list_documents(collection, list(skills), source, limit))
+
+
+async def _list_documents(collection: str, skills: list[str], source: str | None, limit: int):
+    svc = _get_service(require_llm=False)
+    docs = await svc.rag_store.list_documents(
+        collection=collection,
+        skills=skills if skills else None,
+        source=source,
+        limit=limit,
+    )
+
+    if not docs:
+        click.echo("No documents found.")
+        return
+
+    click.echo(f"\n{len(docs)} document(s) in collection '{collection}':\n")
+    for doc in docs:
+        meta = doc["metadata"]
+        doc_skills = meta.get("skills", "")
+        doc_tags = meta.get("tags", "")
+        chunk_info = f"chunk {meta.get('chunk_index', 0) + 1}/{meta.get('total_chunks', 1)}"
+
+        click.echo(f"ID: {doc['id']}")
+        click.echo(f"  Source: {meta.get('source', 'unknown')} ({chunk_info})")
+        if doc_skills:
+            click.echo(f"  Skills: {doc_skills}")
+        else:
+            click.echo(f"  Skills: (available to all)")
+        if doc_tags:
+            click.echo(f"  Tags: {doc_tags}")
+        click.echo(f"  Preview: {doc['text']}")
+        click.echo()
+
+
+# ---------------------------------------------------------------------------
+# delete-documents — remove documents from RAG
+# ---------------------------------------------------------------------------
+
+@cli.command("delete-documents")
+@click.option("--collection", "-c", default="default", help="Collection to delete from")
+@click.option("--source", default=None, help="Delete all chunks from this source")
+@click.option("--id", "doc_ids", multiple=True, help="Document IDs to delete")
+@click.confirmation_option(prompt="Are you sure you want to delete these documents?")
+def delete_documents(collection: str, source: str | None, doc_ids: tuple[str, ...]):
+    """Delete documents from the RAG knowledge base."""
+    asyncio.run(_delete_documents(collection, source, list(doc_ids)))
+
+
+async def _delete_documents(collection: str, source: str | None, doc_ids: list[str]):
+    svc = _get_service(require_llm=False)
+
+    if source:
+        # Delete by source
+        count = await svc.rag_store.delete_by_source(source, collection)
+        click.echo(f"Deleted {count} document(s) with source '{source}'")
+    elif doc_ids:
+        # Delete by IDs
+        await svc.rag_store.delete(doc_ids, collection)
+        click.echo(f"Deleted {len(doc_ids)} document(s)")
+    else:
+        click.echo("Error: Must specify either --source or --id", err=True)
 
 
 # ---------------------------------------------------------------------------
