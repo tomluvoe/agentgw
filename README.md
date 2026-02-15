@@ -176,6 +176,7 @@ tools:
   - search_documents
   - list_files
 
+model: gpt-4o  # Optional: override default model for this skill
 temperature: 0.5
 tags:
   - my-tag
@@ -207,13 +208,20 @@ examples:
 | Field | Default | Description |
 |-------|---------|-------------|
 | `tools` | `[]` | Tool names this skill can use |
-| `model` | global config | Override the LLM model |
-| `temperature` | `0.7` | LLM temperature |
+| `model` | global config | Override LLM model (e.g., `gpt-4o`, `gpt-4o-mini`) |
+| `temperature` | `0.7` | LLM temperature (0.0-2.0) |
 | `max_iterations` | `10` | Agent loop guard |
 | `tags` | `[]` | For RAG filtering and planner routing |
 | `examples` | `[]` | Few-shot examples injected into context |
-| `sub_agents` | `[]` | Skills this agent can delegate to (future) |
+| `sub_agents` | `[]` | Skills this agent can delegate to |
 | `rag_context` | `null` | Auto-inject RAG results into system prompt |
+
+**Model Selection Hierarchy:**
+1. CLI override: `--model gpt-4o`
+2. Skill-specific: `model: gpt-4o` in YAML
+3. Global default: `config/settings.yaml`
+
+See `examples/per_skill_models.md` for detailed guidance on choosing models.
 
 ### RAG Context Auto-Injection
 
@@ -232,6 +240,43 @@ rag_context:
 - Documents ingested with `--skills my_skill` are only available to that skill
 - Documents ingested without `--skills` are available to **all** skills
 - Override with explicit `skills: []` to search across all documents
+
+### Sub-Agent Orchestration
+
+Skills can delegate tasks to other specialized skills using the `delegate_to_agent` tool:
+
+```yaml
+name: project_manager
+description: Coordinates complex multi-step projects
+system_prompt: |
+  You orchestrate tasks by delegating to specialized agents.
+  Break down complex requests and delegate subtasks.
+
+tools:
+  - delegate_to_agent
+
+sub_agents:
+  - general_assistant
+  - code_assistant
+```
+
+**How it works:**
+- One skill delegates a task to another skill
+- Each delegation increments orchestration depth
+- Max depth prevents infinite recursion (default: 3)
+- Results are returned and integrated by the orchestrator
+
+**Example:**
+```python
+# In the orchestrator skill's execution
+result = delegate_to_agent(
+    skill_name="code_assistant",
+    task="Write a Python function to validate emails",
+    context="Use regex and handle edge cases"
+)
+```
+
+See `examples/sub_agent_orchestration.md` for detailed guide.
 
 ## Creating Tools
 
@@ -267,6 +312,7 @@ The decorator automatically:
 | `search_documents` | Search the RAG knowledge base |
 | `ingest_document` | Add text to the knowledge base |
 | `query_db` | Execute read-only SQL queries |
+| `delegate_to_agent` | Delegate a task to another specialized skill |
 
 ## Configuration
 
@@ -334,7 +380,8 @@ agentgw/
 ├── config/settings.yaml
 ├── skills/                          # YAML skill definitions
 │   ├── general_assistant.yaml
-│   └── summarize_document.yaml
+│   ├── summarize_document.yaml
+│   └── project_manager.yaml         # Orchestrator example
 ├── src/agentgw/
 │   ├── core/
 │   │   ├── agent.py                 # ReAct agent loop
@@ -355,7 +402,7 @@ agentgw/
 │   └── interfaces/
 │       ├── cli.py                   # Click CLI
 │       └── web/                     # FastAPI + htmx + SSE
-├── tests/                           # 42 tests
+├── tests/                           # 73 tests
 └── data/                            # Runtime (gitignored)
 ```
 
@@ -373,13 +420,14 @@ AGENTGW_LOG_LEVEL=DEBUG agentgw chat -s general_assistant
 
 | Phase | Status | Features |
 |-------|--------|----------|
-| v0 | Done | Agent loop, tools, SKILLs, CLI, SQLite, ChromaDB, OpenAI |
-| v0.5 | Done | Session resume, feedback, few-shot examples, RAG auto-inject, history |
-| v1 | Done | Web UI, planner agent, SSE streaming, REST API, shared service layer |
-| v1.5 | Planned | Sub-agent orchestration, `delegate_to_agent` meta-tool |
+| v0 | ✅ Done | Agent loop, tools, SKILLs, CLI, SQLite, ChromaDB, OpenAI |
+| v0.5 | ✅ Done | Session resume, feedback, few-shot examples, RAG auto-inject, history |
+| v1 | ✅ Done | Web UI, planner agent, SSE streaming, REST API, shared service layer |
+| v1+ | ✅ Done | Skill-based RAG filtering, document management |
+| v1.5 | ✅ Done | Sub-agent orchestration, `delegate_to_agent` meta-tool, depth tracking |
 | v2 | Planned | APScheduler cron, Anthropic + xAI providers |
 | v2.5 | Planned | Agent-generated new SKILLs from description |
-| v3 | Planned | Full REST API, webhook support |
+| v3 | Planned | Full REST API expansion, webhook support |
 
 ## License
 

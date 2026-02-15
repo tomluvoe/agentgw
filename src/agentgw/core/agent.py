@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextvars import ContextVar
 from typing import AsyncIterator
 
 from agentgw.core.session import Session
@@ -13,6 +14,19 @@ from agentgw.llm.types import Message, ToolCall
 from agentgw.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
+
+# Context variable for tracking orchestration depth across async calls
+_orchestration_depth: ContextVar[int] = ContextVar("orchestration_depth", default=0)
+
+
+def get_current_orchestration_depth() -> int:
+    """Get the current orchestration depth."""
+    return _orchestration_depth.get()
+
+
+def set_current_orchestration_depth(depth: int) -> None:
+    """Set the current orchestration depth."""
+    _orchestration_depth.set(depth)
 
 
 class AgentLoop:
@@ -35,6 +49,7 @@ class AgentLoop:
         session: Session,
         rag_store=None,
         max_iterations: int | None = None,
+        orchestration_depth: int = 0,
     ):
         self._skill = skill
         self._llm = llm
@@ -43,9 +58,13 @@ class AgentLoop:
         self._session = session
         self._rag_store = rag_store
         self._max_iterations = max_iterations or skill.max_iterations
+        self._orchestration_depth = orchestration_depth
 
     async def run(self, user_message: str) -> AsyncIterator[str]:
         """Execute the agent loop, yielding streamed text chunks."""
+        # Set orchestration depth for this execution context
+        set_current_orchestration_depth(self._orchestration_depth)
+
         # Add user message to session
         user_msg = Message(role="user", content=user_message)
         self._session.add_message(user_msg)

@@ -6,7 +6,7 @@ import logging
 import os
 from pathlib import Path
 
-from agentgw.core.agent import AgentLoop
+from agentgw.core.agent import AgentLoop, get_current_orchestration_depth
 from agentgw.core.config import Settings, get_project_root, load_settings
 from agentgw.core.planner import PlannerAgent, PlannerResult
 from agentgw.core.session import Session
@@ -18,6 +18,7 @@ from agentgw.memory.store import MemoryStore
 from agentgw.rag.chroma import RAGStore
 from agentgw.tools.rag_tools import set_rag_store
 from agentgw.tools.sql_tools import set_db_manager
+from agentgw.tools.delegation_tools import set_agent_service
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class AgentService:
         # Wire tool dependencies
         set_rag_store(self.rag_store)
         set_db_manager(self.db_manager)
+        set_agent_service(self)  # For delegation tool
 
         # LLM provider (lazy init)
         self._llm: OpenAIProvider | None = None
@@ -92,8 +94,15 @@ class AgentService:
         skill_name: str,
         session_id: str | None = None,
         model_override: str | None = None,
+        orchestration_depth: int | None = None,
     ) -> tuple[AgentLoop, Session, Skill]:
         """Create an agent loop for a skill, optionally resuming a session.
+
+        Args:
+            skill_name: Name of the skill to load
+            session_id: Optional session ID to resume
+            model_override: Optional model override
+            orchestration_depth: Orchestration depth (auto-detected if None)
 
         Returns (agent, session, skill) tuple.
         """
@@ -119,6 +128,10 @@ class AgentService:
             session = Session.create(skill_name=skill_name)
             await self.memory.create_session(skill_name, session_id=session.id)
 
+        # Auto-detect orchestration depth if not provided
+        if orchestration_depth is None:
+            orchestration_depth = get_current_orchestration_depth()
+
         agent = AgentLoop(
             skill=skill,
             llm=self.llm,
@@ -126,6 +139,7 @@ class AgentService:
             memory=self.memory,
             rag_store=self.rag_store,
             session=session,
+            orchestration_depth=orchestration_depth,
         )
         return agent, session, skill
 
