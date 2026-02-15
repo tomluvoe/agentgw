@@ -20,7 +20,7 @@ from agentgw.llm.types import (
 class OpenAIProvider:
     """OpenAI chat completion provider with streaming and tool calling."""
 
-    def __init__(self, api_key: str, default_model: str = "gpt-4o"):
+    def __init__(self, api_key: str, default_model: str = "gpt-5.2-2025-12-11"):
         self._client = AsyncOpenAI(api_key=api_key)
         self._default_model = default_model
 

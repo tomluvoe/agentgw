@@ -8,78 +8,21 @@ from pathlib import Path
 
 import click
 
-from agentgw.core.agent import AgentLoop
-from agentgw.core.config import get_project_root, load_settings
-from agentgw.core.session import Session
-from agentgw.core.skill_loader import SkillLoader
-from agentgw.core.tool_registry import ToolRegistry
-from agentgw.llm.openai_provider import OpenAIProvider
-from agentgw.memory.store import MemoryStore
-from agentgw.rag.chroma import RAGStore
-from agentgw.tools.rag_tools import set_rag_store
-from agentgw.tools.sql_tools import set_db_manager
+from agentgw.core.config import get_project_root
+from agentgw.core.service import AgentService
 
 
-def _load_env():
-    """Load .env file if it exists."""
-    try:
-        from dotenv import load_dotenv
-        root = get_project_root()
-        load_dotenv(root / ".env")
-    except ImportError:
-        pass
-
-
-class AppContext:
-    """Holds initialized application components."""
-
-    def __init__(self, require_llm: bool = True):
-        _load_env()
-        self.settings = load_settings()
-        self.root = get_project_root()
-
-        # Initialize skill loader
-        skills_dir = self.root / self.settings.skills_dir
-        self.skill_loader = SkillLoader(skills_dir)
-        self.skill_loader.load_all()
-
-        # Initialize tool registry
-        self.tool_registry = ToolRegistry()
-        self.tool_registry.discover(self.settings.tools_modules)
-
-        # Initialize storage
-        db_path = self.root / self.settings.storage.sqlite_path
-        self.memory = MemoryStore(db_path)
-
-        chroma_path = self.root / self.settings.storage.chroma_path
-        self.rag_store = RAGStore(chroma_path)
-
-        # Wire up tool dependencies
-        set_rag_store(self.rag_store)
-        set_db_manager(None)  # DB manager for sql_tools, wired separately
-
-        # Initialize LLM provider only if needed
-        self.llm: OpenAIProvider | None = None
-        if require_llm:
-            self._init_llm()
-
-    def _init_llm(self):
-        """Initialize the LLM provider."""
-        import os
-        api_key = self.settings.openai_api_key
-        if not api_key:
-            api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            click.echo("Error: OPENAI_API_KEY not set. Add it to .env or environment.", err=True)
+def _get_service(require_llm: bool = True) -> AgentService:
+    """Create an AgentService, optionally skipping LLM init."""
+    svc = AgentService()
+    if require_llm:
+        # Access .llm to trigger lazy init and fail early if no key
+        try:
+            _ = svc.llm
+        except RuntimeError as e:
+            click.echo(f"Error: {e}", err=True)
             sys.exit(1)
-        self.llm = OpenAIProvider(
-            api_key=api_key,
-            default_model=self.settings.llm.model,
-        )
-
-    async def init_async(self):
-        """Initialize async components."""
-        await self.memory.initialize()
+    return svc
 
 
 @click.group()
@@ -89,46 +32,49 @@ def cli():
     pass
 
 
+# ---------------------------------------------------------------------------
+# chat — interactive session with feedback and session resume
+# ---------------------------------------------------------------------------
+
 @cli.command()
 @click.option("--skill", "-s", required=True, help="Skill to use")
+@click.option("--session", "session_id", default=None, help="Resume a session by ID")
 @click.option("--model", "-m", default=None, help="Override LLM model")
-def chat(skill: str, model: str | None):
+def chat(skill: str, session_id: str | None, model: str | None):
     """Start an interactive chat session with an agent."""
-    asyncio.run(_chat(skill, model))
+    asyncio.run(_chat(skill, session_id, model))
 
 
-async def _chat(skill_name: str, model_override: str | None):
-    ctx = AppContext()
-    await ctx.init_async()
+async def _chat(skill_name: str, session_id: str | None, model_override: str | None):
+    svc = _get_service()
+    await svc.initialize()
 
-    skill = ctx.skill_loader.load(skill_name)
-    if skill is None:
-        click.echo(f"Error: Skill '{skill_name}' not found.", err=True)
-        click.echo(f"Available skills: {', '.join(s.name for s in ctx.skill_loader.list_skills())}", err=True)
+    try:
+        agent, session, skill = await svc.create_agent(
+            skill_name, session_id=session_id, model_override=model_override
+        )
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
         return
 
-    if model_override:
-        skill.model = model_override
-
     # Validate tools
-    missing = ctx.tool_registry.validate_tool_names(skill.tools)
+    missing = svc.tool_registry.validate_tool_names(skill.tools)
     if missing:
         click.echo(f"Warning: Skill '{skill_name}' references unknown tools: {missing}", err=True)
 
-    session = Session.create(skill_name=skill_name)
-    await ctx.memory.create_session(skill_name)
+    if session_id:
+        msgs = await svc.memory.get_session_messages_formatted(session_id)
+        click.echo(f"Resumed session {session_id} ({len(msgs)} messages)")
+        for m in msgs[-6:]:  # Show last 6 messages for context
+            role = "You" if m["role"] == "user" else "Agent"
+            click.echo(f"  {role}> {m['content'][:120]}")
+        click.echo()
+    else:
+        click.echo(f"Chat session started with skill: {skill.name}")
+        click.echo(f"Session ID: {session.id}")
+        click.echo(f"Description: {skill.description.strip()}")
 
-    click.echo(f"Chat session started with skill: {skill.name}")
-    click.echo(f"Description: {skill.description.strip()}")
-    click.echo("Type 'exit' or 'quit' to end the session.\n")
-
-    agent = AgentLoop(
-        skill=skill,
-        llm=ctx.llm,
-        tool_registry=ctx.tool_registry,
-        memory=ctx.memory,
-        session=session,
-    )
+    click.echo("Commands: 'exit'|'quit', '+1'/'-1' (feedback), '/history'\n")
 
     while True:
         try:
@@ -137,18 +83,48 @@ async def _chat(skill_name: str, model_override: str | None):
             click.echo("\nGoodbye!")
             break
 
-        if user_input.strip().lower() in ("exit", "quit"):
+        stripped = user_input.strip()
+
+        if stripped.lower() in ("exit", "quit"):
             click.echo("Goodbye!")
             break
 
-        if not user_input.strip():
+        if not stripped:
+            continue
+
+        # Feedback commands
+        if stripped in ("+1", "-1", "👍", "👎"):
+            rating = 1 if stripped in ("+1", "👍") else -1
+            msg_id = await svc.memory.get_last_assistant_message_id(session.id)
+            if msg_id:
+                await svc.memory.save_feedback(session.id, msg_id, rating)
+                click.echo(f"  Feedback recorded: {'👍' if rating == 1 else '👎'}\n")
+            else:
+                click.echo("  No message to rate.\n")
+            continue
+
+        # History command
+        if stripped == "/history":
+            msgs = await svc.memory.get_session_messages_formatted(session.id)
+            if not msgs:
+                click.echo("  No messages yet.\n")
+            else:
+                for m in msgs:
+                    role = "You" if m["role"] == "user" else "Agent"
+                    content = m["content"][:200]
+                    click.echo(f"  [{m['created_at']}] {role}> {content}")
+                click.echo()
             continue
 
         click.echo("\nAgent> ", nl=False)
-        async for chunk in agent.run(user_input):
+        async for chunk in agent.run(stripped):
             click.echo(chunk, nl=False)
         click.echo("\n")
 
+
+# ---------------------------------------------------------------------------
+# run — single-shot execution
+# ---------------------------------------------------------------------------
 
 @cli.command()
 @click.argument("message")
@@ -160,47 +136,45 @@ def run(message: str, skill: str, model: str | None):
 
 
 async def _run(message: str, skill_name: str, model_override: str | None):
-    ctx = AppContext()
-    await ctx.init_async()
+    svc = _get_service()
+    await svc.initialize()
 
-    skill = ctx.skill_loader.load(skill_name)
-    if skill is None:
-        click.echo(f"Error: Skill '{skill_name}' not found.", err=True)
+    try:
+        agent, session, skill = await svc.create_agent(
+            skill_name, model_override=model_override
+        )
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
         return
-
-    if model_override:
-        skill.model = model_override
-
-    session = Session.create(skill_name=skill_name)
-
-    agent = AgentLoop(
-        skill=skill,
-        llm=ctx.llm,
-        tool_registry=ctx.tool_registry,
-        memory=ctx.memory,
-        session=session,
-    )
 
     async for chunk in agent.run(message):
         click.echo(chunk, nl=False)
     click.echo()
 
 
+# ---------------------------------------------------------------------------
+# skills — list available skills
+# ---------------------------------------------------------------------------
+
 @cli.command("skills")
 def list_skills():
     """List available skills."""
-    ctx = AppContext(require_llm=False)
-    skills = ctx.skill_loader.list_skills()
+    svc = _get_service(require_llm=False)
+    skills = svc.skill_loader.list_skills()
     if not skills:
         click.echo("No skills found.")
         return
 
-    click.echo(f"{'Name':<25} {'Description'}")
-    click.echo("-" * 70)
+    click.echo(f"{'Name':<25} {'Tools':<6} {'Description'}")
+    click.echo("-" * 75)
     for skill in skills:
-        desc = skill.description.strip().split("\n")[0][:45]
-        click.echo(f"{skill.name:<25} {desc}")
+        desc = skill.description.strip().split("\n")[0][:40]
+        click.echo(f"{skill.name:<25} {len(skill.tools):<6} {desc}")
 
+
+# ---------------------------------------------------------------------------
+# ingest — add documents to RAG
+# ---------------------------------------------------------------------------
 
 @cli.command()
 @click.argument("file_path", type=click.Path(exists=True))
@@ -213,9 +187,9 @@ def ingest(file_path: str, collection: str, tags: tuple[str, ...], chunk_size: i
 
 
 async def _ingest(file_path: str, collection: str, tags: list[str], chunk_size: int):
-    ctx = AppContext(require_llm=False)
+    svc = _get_service(require_llm=False)
     text = Path(file_path).read_text(encoding="utf-8", errors="replace")
-    chunk_ids = await ctx.rag_store.ingest(
+    chunk_ids = await svc.rag_store.ingest(
         text=text,
         metadata={"source": file_path, "tags": tags},
         collection=collection,
@@ -226,16 +200,21 @@ async def _ingest(file_path: str, collection: str, tags: list[str], chunk_size: 
         click.echo(f"Tags: {', '.join(tags)}")
 
 
+# ---------------------------------------------------------------------------
+# sessions — list past sessions
+# ---------------------------------------------------------------------------
+
 @cli.command("sessions")
-def list_sessions():
+@click.option("--skill", "-s", default=None, help="Filter by skill name")
+def list_sessions(skill: str | None):
     """List recent chat sessions."""
-    asyncio.run(_list_sessions())
+    asyncio.run(_list_sessions(skill))
 
 
-async def _list_sessions():
-    ctx = AppContext()
-    await ctx.init_async()
-    sessions = await ctx.memory.get_sessions()
+async def _list_sessions(skill_name: str | None):
+    svc = _get_service(require_llm=False)
+    await svc.initialize()
+    sessions = await svc.memory.get_sessions(skill_name=skill_name)
     if not sessions:
         click.echo("No sessions found.")
         return
@@ -244,3 +223,53 @@ async def _list_sessions():
     click.echo("-" * 80)
     for s in sessions:
         click.echo(f"{s['id']:<38} {s['skill_name'] or 'N/A':<20} {s['updated_at']}")
+
+
+# ---------------------------------------------------------------------------
+# history — view messages from a session
+# ---------------------------------------------------------------------------
+
+@cli.command("history")
+@click.argument("session_id")
+def show_history(session_id: str):
+    """Show the conversation history for a session."""
+    asyncio.run(_show_history(session_id))
+
+
+async def _show_history(session_id: str):
+    svc = _get_service(require_llm=False)
+    await svc.initialize()
+    msgs = await svc.memory.get_session_messages_formatted(session_id)
+    if not msgs:
+        click.echo("No messages found for this session.")
+        return
+
+    for m in msgs:
+        role = "You" if m["role"] == "user" else "Agent"
+        click.echo(f"[{m['created_at']}] {role}> {m['content']}")
+        click.echo()
+
+
+# ---------------------------------------------------------------------------
+# web — launch the web UI server
+# ---------------------------------------------------------------------------
+
+@cli.command("web")
+@click.option("--host", "-h", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", "-p", default=8080, help="Port to bind to")
+@click.option("--reload", "do_reload", is_flag=True, help="Enable auto-reload for development")
+def web_server(host: str, port: int, do_reload: bool):
+    """Launch the web UI server."""
+    import uvicorn
+    from agentgw.interfaces.web.app import create_app
+
+    svc = _get_service()
+    app = create_app(service=svc)
+
+    click.echo(f"Starting agentgw web UI at http://{host}:{port}")
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_level="info",
+    )

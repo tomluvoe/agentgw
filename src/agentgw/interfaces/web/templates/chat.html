@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Chat - {{ skill.name }}{% endblock %}
+
+{% block content %}
+<div class="chat-header">
+    <h2>{{ skill.name }}</h2>
+    <p class="skill-desc">{{ skill.description.strip().split('\n')[0] }}</p>
+    <span class="session-id" id="session-display">
+        {% if session_id %}Session: {{ session_id[:8] }}...{% endif %}
+    </span>
+</div>
+
+<div id="chat-messages" class="chat-messages">
+    {% for msg in history %}
+    <div class="message {{ msg.role }}">
+        <div class="message-role">{{ 'You' if msg.role == 'user' else 'Agent' }}</div>
+        <div class="message-content">{{ msg.content }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<form id="chat-form" class="chat-input-form" onsubmit="sendMessage(event)">
+    <div class="input-row">
+        <input type="text" id="chat-input" placeholder="Type your message..." autocomplete="off" autofocus>
+        <button type="submit" id="send-btn">Send</button>
+    </div>
+    <div class="chat-actions">
+        <button type="button" onclick="sendFeedback(1)" class="btn-feedback" title="Good response">+1</button>
+        <button type="button" onclick="sendFeedback(-1)" class="btn-feedback" title="Bad response">-1</button>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const skillName = "{{ skill.name }}";
+let sessionId = {{ ('"%s"' % session_id) if session_id else 'null' | safe }};
+const messagesDiv = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+
+function appendMessage(role, content) {
+    const div = document.createElement('div');
+    div.className = `message ${role}`;
+    div.innerHTML = `<div class="message-role">${role === 'user' ? 'You' : 'Agent'}</div>
+                     <div class="message-content">${escapeHtml(content)}</div>`;
+    messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    return div;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function sendMessage(e) {
+    e.preventDefault();
+    const msg = chatInput.value.trim();
+    if (!msg) return;
+
+    chatInput.value = '';
+    sendBtn.disabled = true;
+    appendMessage('user', msg);
+
+    // Create assistant message placeholder
+    const assistantDiv = appendMessage('assistant', '');
+    const contentDiv = assistantDiv.querySelector('.message-content');
+    contentDiv.innerHTML = '<em class="typing">Thinking...</em>';
+
+    try {
+        const resp = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                message: msg,
+                skill_name: skillName,
+                session_id: sessionId
+            })
+        });
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+        let started = false;
+
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, {stream: true});
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('event:')) {
+                    var eventType = line.slice(6).trim();
+                } else if (line.startsWith('data:')) {
+                    const data = JSON.parse(line.slice(5).trim());
+
+                    if (eventType === 'session') {
+                        sessionId = data.session_id;
+                        document.getElementById('session-display').textContent =
+                            `Session: ${sessionId.slice(0, 8)}...`;
+                    } else if (eventType === 'chunk') {
+                        if (!started) {
+                            contentDiv.innerHTML = '';
+                            started = true;
+                        }
+                        fullText += data.text;
+                        contentDiv.textContent = fullText;
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                    } else if (eventType === 'error') {
+                        contentDiv.innerHTML = `<em class="error">Error: ${escapeHtml(data.error)}</em>`;
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        contentDiv.innerHTML = `<em class="error">Connection error: ${escapeHtml(err.message)}</em>`;
+    }
+
+    sendBtn.disabled = false;
+    chatInput.focus();
+}
+
+async function sendFeedback(rating) {
+    if (!sessionId) return;
+    try {
+        await fetch('/api/feedback', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: sessionId, rating: rating})
+        });
+        const label = rating > 0 ? '+1' : '-1';
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = `Feedback ${label} recorded`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2000);
+    } catch (err) {
+        console.error('Feedback error:', err);
+    }
+}
+
+// Scroll to bottom on load
+messagesDiv.scrollTop = messagesDiv.scrollHeight;
+</script>
+{% endblock %}

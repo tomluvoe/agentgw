@@ -9,8 +9,7 @@ from typing import AsyncIterator
 from agentgw.core.session import Session
 from agentgw.core.skill_loader import Skill
 from agentgw.core.tool_registry import ToolRegistry
-from agentgw.llm.openai_provider import OpenAIProvider
-from agentgw.llm.types import LLMResponse, Message, StreamChunk, ToolCall, ToolCallDelta
+from agentgw.llm.types import Message, ToolCall
 from agentgw.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
@@ -20,7 +19,7 @@ class AgentLoop:
     """ReAct-style agent loop with streaming support.
 
     Flow:
-    1. Build messages from system prompt + history + user message
+    1. Build messages from system prompt + RAG context + examples + history + user message
     2. Call LLM (streaming)
     3. If tool_calls: execute tools, append results, go to 2
     4. If text response: yield to caller, done
@@ -30,10 +29,11 @@ class AgentLoop:
     def __init__(
         self,
         skill: Skill,
-        llm: OpenAIProvider,
+        llm,  # LLMProvider protocol
         tool_registry: ToolRegistry,
         memory: MemoryStore,
         session: Session,
+        rag_store=None,
         max_iterations: int | None = None,
     ):
         self._skill = skill
@@ -41,14 +41,11 @@ class AgentLoop:
         self._tools = tool_registry
         self._memory = memory
         self._session = session
+        self._rag_store = rag_store
         self._max_iterations = max_iterations or skill.max_iterations
 
     async def run(self, user_message: str) -> AsyncIterator[str]:
-        """Execute the agent loop, yielding streamed text chunks.
-
-        This is an async generator that yields text as it arrives from the LLM.
-        Tool calls are executed silently between text chunks.
-        """
+        """Execute the agent loop, yielding streamed text chunks."""
         # Add user message to session
         user_msg = Message(role="user", content=user_message)
         self._session.add_message(user_msg)
@@ -65,11 +62,11 @@ class AgentLoop:
             logger.debug("Agent iteration %d/%d", iteration, self._max_iterations)
 
             # Build full message list
-            messages = self._build_messages()
+            messages = await self._build_messages()
 
             # Stream the LLM response and accumulate
             full_content = ""
-            accumulated_tool_calls: dict[int, dict] = {}  # index -> {id, name, arguments}
+            accumulated_tool_calls: dict[int, dict] = {}
             finish_reason = None
 
             async for chunk in self._llm.chat_stream(
@@ -78,12 +75,10 @@ class AgentLoop:
                 temperature=self._skill.temperature,
                 model=self._skill.model,
             ):
-                # Yield text content to the caller
                 if chunk.delta_content:
                     full_content += chunk.delta_content
                     yield chunk.delta_content
 
-                # Accumulate tool call deltas
                 if chunk.delta_tool_calls:
                     for tc_delta in chunk.delta_tool_calls:
                         if tc_delta.index not in accumulated_tool_calls:
@@ -123,11 +118,10 @@ class AgentLoop:
                 self._session.id, assistant_msg, self._skill.name
             )
 
-            # If no tool calls, we're done
             if not tool_calls:
                 return
 
-            # Execute tool calls and add results
+            # Execute tool calls
             for tc in tool_calls:
                 logger.info("Executing tool: %s", tc.name)
                 try:
@@ -148,9 +142,6 @@ class AgentLoop:
                     self._session.id, tool_msg, self._skill.name
                 )
 
-            # Loop back to call LLM again with tool results
-
-        # Max iterations reached
         yield "\n\n[Agent reached maximum iterations]"
 
     async def run_to_completion(self, user_message: str) -> str:
@@ -160,8 +151,45 @@ class AgentLoop:
             chunks.append(chunk)
         return "".join(chunks)
 
-    def _build_messages(self) -> list[Message]:
-        """Build the full message list: system prompt + conversation history."""
-        messages = [Message(role="system", content=self._skill.system_prompt)]
+    async def _build_messages(self) -> list[Message]:
+        """Build the full message list: system prompt + RAG context + examples + history."""
+        system_content = self._skill.system_prompt
+
+        # Auto-inject RAG context if configured
+        rag_ctx = self._skill.rag_context
+        if rag_ctx and rag_ctx.get("enabled") and self._rag_store:
+            rag_tags = rag_ctx.get("tags", self._skill.tags)
+            top_k = rag_ctx.get("top_k", 3)
+            # Use the last user message as query
+            last_user = None
+            for msg in reversed(self._session.get_messages()):
+                if msg.role == "user" and msg.content:
+                    last_user = msg.content
+                    break
+            if last_user:
+                results = await self._rag_store.search(
+                    query=last_user,
+                    tags=rag_tags,
+                    top_k=top_k,
+                )
+                if results:
+                    context_parts = []
+                    for r in results:
+                        context_parts.append(r["text"])
+                    context_block = "\n---\n".join(context_parts)
+                    system_content += (
+                        f"\n\n## Relevant Knowledge Base Context\n{context_block}"
+                    )
+
+        messages = [Message(role="system", content=system_content)]
+
+        # Inject few-shot examples
+        for example in self._skill.examples:
+            if "user" in example:
+                messages.append(Message(role="user", content=example["user"]))
+            if "assistant" in example:
+                messages.append(Message(role="assistant", content=example["assistant"]))
+
+        # Add conversation history
         messages.extend(self._session.get_messages())
         return messages

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}agentgw - Ingest{% endblock %}
+
+{% block content %}
+<h1>Ingest Documents</h1>
+
+<section class="card">
+    <h2>Add to Knowledge Base</h2>
+    <form id="ingest-form" onsubmit="submitIngest(event)">
+        <div class="form-group">
+            <label for="ingest-source">Source name</label>
+            <input type="text" id="ingest-source" placeholder="e.g., meeting_notes_2024.txt" required>
+        </div>
+        <div class="form-group">
+            <label for="ingest-tags">Tags (comma-separated)</label>
+            <input type="text" id="ingest-tags" placeholder="e.g., meetings, project-x, notes">
+        </div>
+        <div class="form-group">
+            <label for="ingest-collection">Collection</label>
+            <input type="text" id="ingest-collection" value="default">
+        </div>
+        <div class="form-group">
+            <label for="ingest-text">Content</label>
+            <textarea id="ingest-text" rows="12" placeholder="Paste your document text here..." required></textarea>
+        </div>
+        <button type="submit">Ingest</button>
+    </form>
+    <div id="ingest-result" class="ingest-result" style="display:none;"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function submitIngest(e) {
+    e.preventDefault();
+    const result = document.getElementById('ingest-result');
+    const text = document.getElementById('ingest-text').value.trim();
+    const source = document.getElementById('ingest-source').value.trim();
+    const tagsStr = document.getElementById('ingest-tags').value.trim();
+    const collection = document.getElementById('ingest-collection').value.trim() || 'default';
+
+    if (!text) return;
+
+    const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+    result.style.display = 'block';
+    result.innerHTML = '<em>Ingesting...</em>';
+    result.className = 'ingest-result';
+
+    try {
+        const resp = await fetch('/api/ingest', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text, source, tags, collection})
+        });
+        const data = await resp.json();
+        result.innerHTML = `Ingested <strong>${data.chunks_created}</strong> chunks into collection <strong>${collection}</strong>.`;
+        result.className = 'ingest-result success';
+        document.getElementById('ingest-text').value = '';
+    } catch (err) {
+        result.innerHTML = `Error: ${err.message}`;
+        result.className = 'ingest-result error';
+    }
+}
+</script>
+{% endblock %}

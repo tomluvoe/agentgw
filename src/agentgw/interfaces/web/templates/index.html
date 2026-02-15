@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}agentgw - Home{% endblock %}
+
+{% block content %}
+<h1>Agent Gateway</h1>
+
+<section class="card">
+    <h2>Skills</h2>
+    <div class="skill-grid">
+        {% for skill in skills %}
+        <a href="/chat/{{ skill.name }}" class="skill-card">
+            <h3>{{ skill.name }}</h3>
+            <p>{{ skill.description.strip().split('\n')[0] }}</p>
+            {% if skill.tags %}
+            <div class="tags">
+                {% for tag in skill.tags %}
+                <span class="tag">{{ tag }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="card">
+    <h2>Smart Router</h2>
+    <p>Describe your task and let the planner pick the best skill.</p>
+    <form id="router-form" onsubmit="routeMessage(event)">
+        <div class="input-row">
+            <input type="text" id="router-input" placeholder="What do you need help with?" autocomplete="off">
+            <button type="submit">Route</button>
+        </div>
+    </form>
+    <div id="router-result" class="router-result" style="display:none;"></div>
+</section>
+
+{% if sessions %}
+<section class="card">
+    <h2>Recent Sessions</h2>
+    <table class="sessions-table">
+        <thead><tr><th>Skill</th><th>Updated</th><th></th></tr></thead>
+        <tbody>
+            {% for s in sessions %}
+            <tr>
+                <td>{{ s.skill_name or 'N/A' }}</td>
+                <td>{{ s.updated_at }}</td>
+                <td><a href="/chat/{{ s.skill_name }}?session_id={{ s.id }}">Resume</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function routeMessage(e) {
+    e.preventDefault();
+    const input = document.getElementById('router-input');
+    const result = document.getElementById('router-result');
+    const msg = input.value.trim();
+    if (!msg) return;
+
+    result.style.display = 'block';
+    result.innerHTML = '<em>Routing...</em>';
+
+    try {
+        const resp = await fetch('/api/route', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message: msg, skill_name: ''})
+        });
+        const data = await resp.json();
+        if (data.skill) {
+            result.innerHTML = `<strong>Recommended:</strong> <a href="/chat/${data.skill}">${data.skill}</a><br><small>${data.reasoning}</small>`;
+        } else {
+            result.innerHTML = `<em>No matching skill found.</em> <small>${data.reasoning}</small>`;
+        }
+    } catch (err) {
+        result.innerHTML = `<em>Error: ${err.message}</em>`;
+    }
+}
+</script>
+{% endblock %}

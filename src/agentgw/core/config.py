@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class LLMConfig(BaseModel):
     provider: str = "openai"
-    model: str = "gpt-4o"
+    model: str = "gpt-5.2-2025-12-11"
     temperature: float = 0.7
     max_tokens: int = 4096
 

@@ -21,14 +21,16 @@ class MemoryStore:
         """Create tables if needed."""
         await self._db.initialize(SCHEMA_SQL)
 
-    async def create_session(self, skill_name: str | None = None) -> str:
+    async def create_session(
+        self, skill_name: str | None = None, session_id: str | None = None
+    ) -> str:
         """Create a new session and return its ID."""
-        session_id = str(uuid.uuid4())
+        sid = session_id or str(uuid.uuid4())
         await self._db.execute(
             "INSERT INTO sessions (id, skill_name) VALUES (?, ?)",
-            (session_id, skill_name),
+            (sid, skill_name),
         )
-        return session_id
+        return sid
 
     async def save_message(
         self,
@@ -93,6 +95,16 @@ class MemoryStore:
             )
         return messages
 
+    async def get_last_assistant_message_id(self, session_id: str) -> str | None:
+        """Get the ID of the most recent assistant message in a session."""
+        rows = await self._db.execute_query(
+            """SELECT id FROM conversations
+               WHERE session_id = ? AND role = 'assistant'
+               ORDER BY created_at DESC LIMIT 1""",
+            (session_id,),
+        )
+        return rows[0]["id"] if rows else None
+
     async def save_feedback(
         self,
         session_id: str,
@@ -123,3 +135,14 @@ class MemoryStore:
                FROM sessions ORDER BY updated_at DESC LIMIT ?""",
             (limit,),
         )
+
+    async def get_session_messages_formatted(self, session_id: str) -> list[dict]:
+        """Get messages for display (excludes tool-internal messages)."""
+        rows = await self._db.execute_query(
+            """SELECT id, role, content, created_at
+               FROM conversations
+               WHERE session_id = ? AND role IN ('user', 'assistant') AND content IS NOT NULL
+               ORDER BY created_at ASC""",
+            (session_id,),
+        )
+        return rows
