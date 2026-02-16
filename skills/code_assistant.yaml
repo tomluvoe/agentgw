@@ -21,7 +21,7 @@ tools:
   - list_files
   - search_documents
 
-model: gpt-4o  # Uses more capable model for complex code reasoning
+model: gpt-5.1-codex  # Uses more capable model for complex code reasoning
 temperature: 0.3  # Lower temperature for more deterministic code generation
 
 tags:
