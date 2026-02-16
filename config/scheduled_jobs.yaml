@@ -1,0 +1,43 @@
+# Scheduled Jobs Configuration
+# Define cron-style scheduled agent tasks
+#
+# Each job requires:
+# - name: Unique identifier
+# - skill_name: Which skill to run
+# - message: Task/question for the agent
+# - cron_expression: When to run (crontab format)
+# - enabled: Whether job is active
+# - log_output: Write results to log file
+
+jobs:
+  # Example: Daily summary at 9 AM
+  - name: daily_summary
+    skill_name: general_assistant
+    message: "Provide a brief summary of today's date and any interesting facts."
+    cron_expression: "0 9 * * *"  # Every day at 9:00 AM
+    enabled: false  # Disabled by default
+    log_output: true
+
+  # Example: Hourly status check
+  - name: hourly_check
+    skill_name: quick_assistant
+    message: "Quick status check - respond with OK."
+    cron_expression: "0 * * * *"  # Every hour
+    enabled: false
+    log_output: true
+
+  # Example: Weekly report on Mondays
+  - name: weekly_report
+    skill_name: general_assistant
+    message: "Generate a weekly status report."
+    cron_expression: "0 10 * * 1"  # Mondays at 10:00 AM
+    enabled: false
+    log_output: true
+
+# Cron expression format: minute hour day month day_of_week
+# Examples:
+# "*/5 * * * *"     - Every 5 minutes
+# "0 */2 * * *"     - Every 2 hours
+# "30 9 * * 1-5"    - 9:30 AM on weekdays
+# "0 0 1 * *"       - Midnight on 1st of each month
+# "0 12 * * 0"      - Noon every Sunday

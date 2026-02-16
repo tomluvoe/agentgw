@@ -12,6 +12,7 @@ from agentgw.core.skill_loader import Skill
 from agentgw.core.tool_registry import ToolRegistry
 from agentgw.llm.types import Message, ToolCall
 from agentgw.memory.store import MemoryStore
+from agentgw.webhooks.delivery import WebhookDelivery, WebhookEvent
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class AgentLoop:
         rag_store=None,
         max_iterations: int | None = None,
         orchestration_depth: int = 0,
+        webhook_delivery: WebhookDelivery | None = None,
     ):
         self._skill = skill
         self._llm = llm
@@ -59,11 +61,24 @@ class AgentLoop:
         self._rag_store = rag_store
         self._max_iterations = max_iterations or skill.max_iterations
         self._orchestration_depth = orchestration_depth
+        self._webhook_delivery = webhook_delivery
 
     async def run(self, user_message: str) -> AsyncIterator[str]:
         """Execute the agent loop, yielding streamed text chunks."""
         # Set orchestration depth for this execution context
         set_current_orchestration_depth(self._orchestration_depth)
+
+        # Fire agent started webhook
+        if self._webhook_delivery:
+            await self._webhook_delivery.send_event(
+                WebhookEvent.AGENT_STARTED,
+                {
+                    "session_id": self._session.id,
+                    "skill_name": self._skill.name,
+                    "message": user_message,
+                    "orchestration_depth": self._orchestration_depth,
+                },
+            )
 
         # Add user message to session
         user_msg = Message(role="user", content=user_message)
@@ -138,6 +153,16 @@ class AgentLoop:
             )
 
             if not tool_calls:
+                # Agent completed successfully
+                if self._webhook_delivery:
+                    await self._webhook_delivery.send_event(
+                        WebhookEvent.AGENT_COMPLETED,
+                        {
+                            "session_id": self._session.id,
+                            "skill_name": self._skill.name,
+                            "result": full_content or "",
+                        },
+                    )
                 return
 
             # Execute tool calls
@@ -149,6 +174,19 @@ class AgentLoop:
                     arguments = {}
 
                 result = await self._tools.execute(tc.name, arguments)
+
+                # Fire tool executed webhook
+                if self._webhook_delivery:
+                    await self._webhook_delivery.send_event(
+                        WebhookEvent.TOOL_EXECUTED,
+                        {
+                            "session_id": self._session.id,
+                            "skill_name": self._skill.name,
+                            "tool_name": tc.name,
+                            "arguments": arguments,
+                            "result": result,
+                        },
+                    )
 
                 tool_msg = Message(
                     role="tool",

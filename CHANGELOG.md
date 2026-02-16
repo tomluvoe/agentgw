@@ -4,12 +4,58 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
+### Added (Production Readiness Features)
+- **API Key Authentication**: Bearer token authentication via `AGENTGW_API_KEY`
+  - APIKeyMiddleware for protecting endpoints
+  - Public endpoints: /, /health, /docs, /static/*
+  - All /api/* routes require authentication when configured
+- **OpenAPI/Swagger Documentation**: Interactive API docs at `/docs` and `/redoc`
+  - Endpoints organized by tags (Chat, Skills, Sessions, Knowledge Base, Tools, System)
+  - Request/response models fully documented
+- **Health Check Endpoint**: `/health` for monitoring and load balancers
+  - Returns service status, version, provider, and model
+  - Used in Docker HEALTHCHECK and Kubernetes probes
+- **Graceful Shutdown**: Clean resource cleanup on termination
+  - Database connections closed properly
+  - Lifespan context manager for startup/shutdown hooks
+- **Deployment Guide**: Comprehensive DEPLOYMENT.md with:
+  - Docker and docker-compose examples
+  - Systemd service configuration
+  - Nginx reverse proxy with SSL/TLS
+  - Security best practices and hardening
+  - Monitoring, backup, and Kubernetes deployment
+
+### Added (v2 & v3)
+- **Cron scheduling (v2)**: APScheduler-based task scheduling
+  - `CronScheduler` class for managing scheduled agent tasks
+  - YAML configuration in `config/scheduled_jobs.yaml`
+  - CLI: `agentgw scheduler --start` to run scheduled jobs
+  - CLI: `agentgw scheduler --list` to view configured jobs
+  - Automatic job execution with logging to `data/logs/`
+- **Multi-provider LLM support (v2)**: Support for OpenAI, Anthropic, and xAI
+  - `AnthropicProvider` with full streaming and tool calling support
+  - `XAIProvider` for Grok models (OpenAI-compatible API)
+  - Provider selection via `llm.provider` config (openai/anthropic/xai)
+  - Per-provider API keys in config/environment
+- **Webhook system (v3)**: Event-driven webhook delivery
+  - `WebhookDelivery` class with retry logic and exponential backoff
+  - Events: agent.started, agent.completed, agent.failed, tool.executed, session.created
+  - YAML configuration in `config/webhooks.yaml`
+  - CLI: `agentgw webhooks --list` to view configured webhooks
+  - Fire-and-forget delivery with `asyncio.create_task`
+  - Webhook secret authentication support
+- **Extended REST API (v3)**: Additional endpoints for configuration and monitoring
+  - `GET /api/config` - Current configuration
+  - `GET /api/tools` - List all registered tools
+  - `POST /api/tools/{tool_name}/execute` - Execute tool directly
+  - `GET /api/stats` - Usage statistics
+
+### Added (v1.5)
 - **Per-skill model selection**: Each skill can specify its own LLM model
   - Example skills demonstrating model selection (`code_assistant`, `quick_assistant`)
   - Model hierarchy: CLI override > skill YAML > global default
   - Comprehensive guide in `examples/per_skill_models.md`
-- **Sub-agent orchestration (v1.5)**: Skills can now delegate tasks to other specialized skills
+- **Sub-agent orchestration**: Skills can now delegate tasks to other specialized skills
   - New `delegate_to_agent` meta-tool for task delegation
   - Orchestration depth tracking with configurable max depth (default: 3)
   - Context variables for async depth management
@@ -44,6 +90,6 @@ All notable changes to this project will be documented in this file.
 - ✅ **v1.5**: Sub-agent orchestration, delegate_to_agent meta-tool, depth tracking
 
 ### Roadmap
-- **v2**: APScheduler cron scheduling, Anthropic + xAI LLM providers
-- **v2.5**: Agent-generated new SKILLs from user description
-- **v3**: Full REST API expansion, webhook support
+- **v2**: ✅ APScheduler cron scheduling, Anthropic + xAI LLM providers (COMPLETE)
+- **v3**: ✅ Full REST API expansion, webhook support (COMPLETE)
+- **v3.5**: Agent-generated new SKILLs from user description (NEXT)

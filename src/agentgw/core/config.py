@@ -39,7 +39,14 @@ class Settings(BaseSettings):
     skills_dir: str = "skills"
     tools_modules: list[str] = ["agentgw.tools"]
 
+    # API Keys for different providers
     openai_api_key: str = ""
+    anthropic_api_key: str = ""
+    xai_api_key: str = ""
+
+    # Webhook settings
+    webhook_max_retries: int = 3
+    webhook_timeout: int = 30
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> Settings:

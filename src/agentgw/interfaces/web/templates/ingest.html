@@ -6,48 +6,216 @@
 
 <section class="card">
     <h2>Add to Knowledge Base</h2>
-    <form id="ingest-form" onsubmit="submitIngest(event)">
+
+    <!-- Tab Navigation -->
+    <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; border-bottom: 1px solid #414868;">
+        <button onclick="switchTab('text')" id="tab-text" style="background: none; border: none; border-bottom: 2px solid #7aa2f7; padding: 0.5rem 1rem; cursor: pointer; color: #7aa2f7; font-weight: 600;">
+            Paste Text
+        </button>
+        <button onclick="switchTab('file')" id="tab-file" style="background: none; border: none; border-bottom: 2px solid transparent; padding: 0.5rem 1rem; cursor: pointer; color: #a9b1d6;">
+            Upload File
+        </button>
+    </div>
+
+    <!-- Text Input Form -->
+    <form id="ingest-form-text" onsubmit="submitIngestText(event)" style="display: block;">
         <div class="form-group">
-            <label for="ingest-source">Source name</label>
-            <input type="text" id="ingest-source" placeholder="e.g., meeting_notes_2024.txt" required>
+            <label for="ingest-source-text">Source name</label>
+            <input type="text" id="ingest-source-text" placeholder="e.g., meeting_notes_2024.txt" required>
         </div>
         <div class="form-group">
-            <label for="ingest-skills">Skills (comma-separated, empty = all skills)</label>
-            <input type="text" id="ingest-skills" placeholder="e.g., general_assistant, summarize_document">
-            <small style="color: #7aa2f7;">Leave empty to make this document available to all agents</small>
+            <label>Skills (select one or more, or leave empty for all skills)</label>
+            <div id="skills-checkboxes-text" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; padding: 0.75rem; background: #1a1b26; border: 1px solid #414868; border-radius: 4px; max-height: 200px; overflow-y: auto;">
+                <em style="color: #565f89;">Loading skills...</em>
+            </div>
+            <small style="color: #7aa2f7;">Leave all unchecked to make this document available to all agents</small>
         </div>
         <div class="form-group">
-            <label for="ingest-tags">Tags (comma-separated)</label>
-            <input type="text" id="ingest-tags" placeholder="e.g., meetings, project-x, notes">
+            <label for="ingest-tags-text">Tags (comma-separated)</label>
+            <input type="text" id="ingest-tags-text" placeholder="e.g., meetings, project-x, notes">
         </div>
         <div class="form-group">
-            <label for="ingest-collection">Collection</label>
-            <input type="text" id="ingest-collection" value="default">
+            <label for="ingest-collection-text">Collection</label>
+            <input type="text" id="ingest-collection-text" value="default">
         </div>
         <div class="form-group">
             <label for="ingest-text">Content</label>
             <textarea id="ingest-text" rows="12" placeholder="Paste your document text here..." required></textarea>
         </div>
-        <button type="submit">Ingest</button>
+        <button type="submit">Ingest Text</button>
     </form>
+
+    <!-- File Upload Form -->
+    <form id="ingest-form-file" onsubmit="submitIngestFile(event)" style="display: none;">
+        <div class="form-group">
+            <label for="ingest-file">Choose File</label>
+            <input type="file" id="ingest-file" accept=".txt,.md,.pdf,.doc,.docx,.csv,.json" onchange="handleFileSelect(event)" required>
+            <small style="color: #7aa2f7;">Supported: TXT, MD, PDF, DOC, DOCX, CSV, JSON (max 10MB)</small>
+        </div>
+        <div class="form-group">
+            <label>Skills (select one or more, or leave empty for all skills)</label>
+            <div id="skills-checkboxes-file" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; padding: 0.75rem; background: #1a1b26; border: 1px solid #414868; border-radius: 4px; max-height: 200px; overflow-y: auto;">
+                <em style="color: #565f89;">Loading skills...</em>
+            </div>
+            <small style="color: #7aa2f7;">Leave all unchecked to make this document available to all agents</small>
+        </div>
+        <div class="form-group">
+            <label for="ingest-tags-file">Tags (comma-separated)</label>
+            <input type="text" id="ingest-tags-file" placeholder="e.g., meetings, project-x, notes">
+        </div>
+        <div class="form-group">
+            <label for="ingest-collection-file">Collection</label>
+            <input type="text" id="ingest-collection-file" value="default">
+        </div>
+        <div id="file-preview" style="display: none; padding: 1rem; background: #1a1b26; border: 1px solid #414868; border-radius: 4px; margin-bottom: 1rem;">
+            <strong>File:</strong> <span id="file-name"></span><br>
+            <strong>Size:</strong> <span id="file-size"></span><br>
+            <strong>Type:</strong> <span id="file-type"></span>
+        </div>
+        <button type="submit" id="upload-btn" disabled>Upload & Ingest</button>
+    </form>
+
     <div id="ingest-result" class="ingest-result" style="display:none;"></div>
 </section>
 {% endblock %}
 
 {% block scripts %}
 <script>
-async function submitIngest(e) {
+let selectedFile = null;
+let availableSkills = [];
+
+// Load available skills on page load
+(async function loadAvailableSkills() {
+    try {
+        const resp = await fetch('/api/skills');
+        const skills = await resp.json();
+        availableSkills = skills.map(s => s.name);
+
+        // Populate checkboxes for both forms
+        populateSkillCheckboxes('skills-checkboxes-text', availableSkills);
+        populateSkillCheckboxes('skills-checkboxes-file', availableSkills);
+    } catch (err) {
+        console.error('Failed to load skills:', err);
+        document.getElementById('skills-checkboxes-text').innerHTML = '<em style="color: #f7768e;">Failed to load skills</em>';
+        document.getElementById('skills-checkboxes-file').innerHTML = '<em style="color: #f7768e;">Failed to load skills</em>';
+    }
+})();
+
+function populateSkillCheckboxes(containerId, skills) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+
+    if (skills.length === 0) {
+        container.innerHTML = '<em style="color: #565f89;">No skills available</em>';
+        return;
+    }
+
+    skills.forEach((skillName, index) => {
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.5rem';
+        label.style.cursor = 'pointer';
+        label.style.padding = '0.25rem';
+        label.style.borderRadius = '4px';
+        label.style.transition = 'background 0.2s';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = skillName;
+        checkbox.className = 'skill-checkbox';
+        checkbox.id = `${containerId}-${index}`;
+
+        const text = document.createElement('span');
+        text.textContent = skillName;
+        text.style.fontSize = '0.9rem';
+
+        label.appendChild(checkbox);
+        label.appendChild(text);
+
+        // Hover effect
+        label.onmouseover = () => label.style.background = '#292e42';
+        label.onmouseout = () => label.style.background = 'transparent';
+
+        container.appendChild(label);
+    });
+}
+
+function getSelectedSkills(containerId) {
+    const checkboxes = document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`);
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+function switchTab(tab) {
+    const textForm = document.getElementById('ingest-form-text');
+    const fileForm = document.getElementById('ingest-form-file');
+    const textTab = document.getElementById('tab-text');
+    const fileTab = document.getElementById('tab-file');
+
+    if (tab === 'text') {
+        textForm.style.display = 'block';
+        fileForm.style.display = 'none';
+        textTab.style.borderBottom = '2px solid #7aa2f7';
+        textTab.style.color = '#7aa2f7';
+        textTab.style.fontWeight = '600';
+        fileTab.style.borderBottom = '2px solid transparent';
+        fileTab.style.color = '#a9b1d6';
+        fileTab.style.fontWeight = 'normal';
+    } else {
+        textForm.style.display = 'none';
+        fileForm.style.display = 'block';
+        fileTab.style.borderBottom = '2px solid #7aa2f7';
+        fileTab.style.color = '#7aa2f7';
+        fileTab.style.fontWeight = '600';
+        textTab.style.borderBottom = '2px solid transparent';
+        textTab.style.color = '#a9b1d6';
+        textTab.style.fontWeight = 'normal';
+    }
+    // Hide result when switching tabs
+    document.getElementById('ingest-result').style.display = 'none';
+}
+
+function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        alert('File too large. Maximum size is 10MB.');
+        e.target.value = '';
+        return;
+    }
+
+    selectedFile = file;
+
+    // Show file preview
+    const preview = document.getElementById('file-preview');
+    document.getElementById('file-name').textContent = file.name;
+    document.getElementById('file-size').textContent = formatFileSize(file.size);
+    document.getElementById('file-type').textContent = file.type || 'Unknown';
+    preview.style.display = 'block';
+
+    // Enable upload button
+    document.getElementById('upload-btn').disabled = false;
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' bytes';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+async function submitIngestText(e) {
     e.preventDefault();
     const result = document.getElementById('ingest-result');
     const text = document.getElementById('ingest-text').value.trim();
-    const source = document.getElementById('ingest-source').value.trim();
-    const skillsStr = document.getElementById('ingest-skills').value.trim();
-    const tagsStr = document.getElementById('ingest-tags').value.trim();
-    const collection = document.getElementById('ingest-collection').value.trim() || 'default';
+    const source = document.getElementById('ingest-source-text').value.trim();
+    const tagsStr = document.getElementById('ingest-tags-text').value.trim();
+    const collection = document.getElementById('ingest-collection-text').value.trim() || 'default';
 
     if (!text) return;
 
-    const skills = skillsStr ? skillsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const skills = getSelectedSkills('skills-checkboxes-text');
     const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
 
     result.style.display = 'block';
@@ -61,14 +229,103 @@ async function submitIngest(e) {
             body: JSON.stringify({text, source, skills, tags, collection})
         });
         const data = await resp.json();
+
+        if (data.status === 'error') {
+            let errorMsg = `✗ ${data.message}`;
+            if (data.available_skills) {
+                errorMsg += `<br><small>Available skills: ${data.available_skills.join(', ')}</small>`;
+            }
+            result.innerHTML = errorMsg;
+            result.className = 'ingest-result error';
+            return;
+        }
+
         const skillsMsg = skills.length > 0 ? ` (for skills: ${skills.join(', ')})` : ' (available to all skills)';
-        result.innerHTML = `Ingested <strong>${data.chunks_created}</strong> chunks into collection <strong>${collection}</strong>${skillsMsg}.`;
+        result.innerHTML = `✓ Ingested <strong>${data.chunks_created}</strong> chunks into collection <strong>${collection}</strong>${skillsMsg}.`;
         result.className = 'ingest-result success';
         document.getElementById('ingest-text').value = '';
     } catch (err) {
-        result.innerHTML = `Error: ${err.message}`;
+        result.innerHTML = `✗ Error: ${err.message}`;
         result.className = 'ingest-result error';
     }
+}
+
+async function submitIngestFile(e) {
+    e.preventDefault();
+    const result = document.getElementById('ingest-result');
+
+    if (!selectedFile) {
+        result.style.display = 'block';
+        result.innerHTML = '✗ No file selected';
+        result.className = 'ingest-result error';
+        return;
+    }
+
+    const tagsStr = document.getElementById('ingest-tags-file').value.trim();
+    const collection = document.getElementById('ingest-collection-file').value.trim() || 'default';
+
+    const skills = getSelectedSkills('skills-checkboxes-file');
+    const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+    result.style.display = 'block';
+    result.innerHTML = '<em>Reading file and ingesting...</em>';
+    result.className = 'ingest-result';
+
+    try {
+        // Read file content
+        const text = await readFileAsText(selectedFile);
+
+        if (!text.trim()) {
+            throw new Error('File is empty or could not be read');
+        }
+
+        // Ingest via API
+        const resp = await fetch('/api/ingest', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                text,
+                source: selectedFile.name,
+                skills,
+                tags,
+                collection
+            })
+        });
+
+        const data = await resp.json();
+
+        if (data.status === 'error') {
+            let errorMsg = `✗ ${data.message}`;
+            if (data.available_skills) {
+                errorMsg += `<br><small>Available skills: ${data.available_skills.join(', ')}</small>`;
+            }
+            result.innerHTML = errorMsg;
+            result.className = 'ingest-result error';
+            return;
+        }
+
+        const skillsMsg = skills.length > 0 ? ` (for skills: ${skills.join(', ')})` : ' (available to all skills)';
+        result.innerHTML = `✓ Ingested <strong>${data.chunks_created}</strong> chunks from <strong>${selectedFile.name}</strong> into collection <strong>${collection}</strong>${skillsMsg}.`;
+        result.className = 'ingest-result success';
+
+        // Reset form
+        document.getElementById('ingest-form-file').reset();
+        document.getElementById('file-preview').style.display = 'none';
+        document.getElementById('upload-btn').disabled = true;
+        selectedFile = null;
+    } catch (err) {
+        result.innerHTML = `✗ Error: ${err.message}`;
+        result.className = 'ingest-result error';
+    }
+}
+
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = (e) => reject(new Error('Failed to read file'));
+        reader.readAsText(file);
+    });
 }
 </script>
 {% endblock %}

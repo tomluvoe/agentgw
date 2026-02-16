@@ -189,6 +189,20 @@ def ingest(file_path: str, collection: str, skills: tuple[str, ...], tags: tuple
 
 async def _ingest(file_path: str, collection: str, skills: list[str], tags: list[str], chunk_size: int):
     svc = _get_service(require_llm=False)
+
+    # Validate skills if provided
+    if skills:
+        available_skills = {s.name for s in svc.skill_loader.list_skills()}
+        invalid_skills = [s for s in skills if s not in available_skills]
+
+        if invalid_skills:
+            click.echo(f"Error: Unknown skill(s): {', '.join(invalid_skills)}", err=True)
+            click.echo(f"\nAvailable skills:", err=True)
+            for skill_name in sorted(available_skills):
+                click.echo(f"  - {skill_name}", err=True)
+            click.echo(f"\nUse 'agentgw skills' to see all available skills.", err=True)
+            sys.exit(1)
+
     text = Path(file_path).read_text(encoding="utf-8", errors="replace")
     chunk_ids = await svc.rag_store.ingest(
         text=text,
@@ -353,3 +367,154 @@ def web_server(host: str, port: int, do_reload: bool):
         port=port,
         log_level="info",
     )
+
+
+# ---------------------------------------------------------------------------
+# scheduler — manage scheduled jobs
+# ---------------------------------------------------------------------------
+
+@cli.command("scheduler")
+@click.option("--start", is_flag=True, help="Start the scheduler")
+@click.option("--list", "list_jobs", is_flag=True, help="List scheduled jobs")
+@click.option("--config", default="config/scheduled_jobs.yaml", help="Path to jobs config file")
+def scheduler_cmd(start: bool, list_jobs: bool, config: str):
+    """Manage scheduled agent tasks (cron-style)."""
+    if start:
+        asyncio.run(_start_scheduler(config))
+    elif list_jobs:
+        asyncio.run(_list_scheduled_jobs(config))
+    else:
+        click.echo("Use --start to run scheduler or --list to see jobs")
+        click.echo("Example: agentgw scheduler --start")
+
+
+async def _start_scheduler(config_path: str):
+    """Start the scheduler and run until interrupted."""
+    import signal
+    from agentgw.scheduler.cron import CronScheduler, ScheduledJob
+
+    svc = _get_service()
+    await svc.initialize()
+
+    # Load jobs from config
+    config_file = Path(config_path)
+    if not config_file.exists():
+        click.echo(f"Config file not found: {config_path}", err=True)
+        return
+
+    import yaml
+    with open(config_file) as f:
+        config_data = yaml.safe_load(f) or {}
+
+    jobs_data = config_data.get("jobs", [])
+    if not jobs_data:
+        click.echo("No jobs defined in config file", err=True)
+        return
+
+    # Create scheduler
+    log_dir = svc.root / svc.settings.storage.log_dir
+    scheduler = CronScheduler(svc, log_dir)
+
+    # Add jobs
+    enabled_count = 0
+    for job_data in jobs_data:
+        job = ScheduledJob(
+            name=job_data["name"],
+            skill_name=job_data["skill_name"],
+            message=job_data["message"],
+            cron_expression=job_data["cron_expression"],
+            enabled=job_data.get("enabled", True),
+            log_output=job_data.get("log_output", True),
+        )
+        scheduler.add_job(job)
+        if job.enabled:
+            enabled_count += 1
+
+    if enabled_count == 0:
+        click.echo("No enabled jobs. Edit config file to enable jobs.", err=True)
+        return
+
+    # Start scheduler
+    scheduler.start()
+    click.echo(f"Scheduler started with {enabled_count} enabled job(s)")
+    click.echo("Press Ctrl+C to stop")
+
+    # Wait for interrupt
+    try:
+        while True:
+            await asyncio.sleep(1)
+    except KeyboardInterrupt:
+        click.echo("\nShutting down scheduler...")
+        scheduler.shutdown()
+
+
+async def _list_scheduled_jobs(config_path: str):
+    """List configured jobs."""
+    config_file = Path(config_path)
+    if not config_file.exists():
+        click.echo(f"Config file not found: {config_path}", err=True)
+        return
+
+    import yaml
+    with open(config_file) as f:
+        config_data = yaml.safe_load(f) or {}
+
+    jobs_data = config_data.get("jobs", [])
+    if not jobs_data:
+        click.echo("No jobs configured")
+        return
+
+    click.echo(f"\nConfigured jobs in {config_path}:\n")
+    for job in jobs_data:
+        status = "✓ enabled" if job.get("enabled", True) else "✗ disabled"
+        click.echo(f"  {job['name']} ({status})")
+        click.echo(f"    Skill: {job['skill_name']}")
+        click.echo(f"    Cron: {job['cron_expression']}")
+        click.echo(f"    Task: {job['message'][:60]}...")
+        click.echo()
+
+
+# ---------------------------------------------------------------------------
+# webhooks — webhook management
+# ---------------------------------------------------------------------------
+
+@cli.command("webhooks")
+@click.option("--list", "list_hooks", is_flag=True, help="List configured webhooks")
+@click.option("--config", default="config/webhooks.yaml", help="Webhook config file")
+def webhooks_cmd(list_hooks: bool, config: str):
+    """Manage webhook configurations."""
+    root = get_project_root()
+    config_path = root / config
+
+    if not config_path.exists():
+        click.echo(f"Webhook config not found: {config_path}", err=True)
+        click.echo("Create config/webhooks.yaml to define webhooks")
+        sys.exit(1)
+
+    if list_hooks:
+        _list_webhooks(config_path)
+    else:
+        click.echo(f"Webhook config: {config_path}")
+        click.echo("Use --list to view configured webhooks")
+
+
+def _list_webhooks(config_path: Path):
+    """List configured webhooks."""
+    import yaml
+    with open(config_path) as f:
+        data = yaml.safe_load(f)
+
+    webhooks = data.get("webhooks", [])
+    if not webhooks:
+        click.echo("No webhooks configured")
+        return
+
+    click.echo(f"\nConfigured webhooks in {config_path}:\n")
+    for hook in webhooks:
+        status = "✓ enabled" if hook.get("enabled", True) else "✗ disabled"
+        click.echo(f"  {hook['name']} ({status})")
+        click.echo(f"    URL: {hook['url']}")
+        click.echo(f"    Events: {', '.join(hook.get('events', []))}")
+        if hook.get("secret"):
+            click.echo(f"    Secret: {'*' * 20}")
+        click.echo()

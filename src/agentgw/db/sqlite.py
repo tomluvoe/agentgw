@@ -44,3 +44,7 @@ class DatabaseManager:
         async with aiosqlite.connect(self._db_path) as db:
             await db.executemany(sql, param_list)
             await db.commit()
+
+    async def close(self) -> None:
+        """Close any persistent connections (no-op for aiosqlite, connections are per-query)."""
+        logger.info("Database manager closed (aiosqlite uses per-query connections)")

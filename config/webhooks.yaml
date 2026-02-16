@@ -1,0 +1,57 @@
+# Webhooks Configuration
+# Define webhook endpoints to receive agent events
+#
+# Each webhook requires:
+# - name: Unique identifier
+# - url: HTTP endpoint to POST events to
+# - events: List of events to subscribe to
+# - secret: Optional shared secret for authentication
+# - enabled: Whether webhook is active
+
+webhooks:
+  # Example: Send all agent events to a logging service
+  - name: logger_webhook
+    url: http://localhost:8080/webhook/agent-events
+    events:
+      - agent.started
+      - agent.completed
+      - agent.failed
+      - tool.executed
+    secret: your-webhook-secret-here
+    enabled: false  # Disabled by default
+
+  # Example: Session tracking webhook
+  - name: session_tracker
+    url: https://analytics.example.com/sessions
+    events:
+      - session.created
+      - agent.completed
+    enabled: false
+
+  # Example: Tool monitoring only
+  - name: tool_monitor
+    url: http://localhost:9000/tools
+    events:
+      - tool.executed
+    enabled: false
+
+# Available events:
+# - agent.started: Agent begins processing a message
+# - agent.completed: Agent finishes successfully
+# - agent.failed: Agent encounters an error
+# - tool.executed: A tool function is called
+# - session.created: New session created
+# - feedback.received: User provides feedback (+1/-1)
+
+# Webhook payload format:
+# {
+#   "event": "agent.completed",
+#   "timestamp": "2024-01-15T10:30:00",
+#   "data": {
+#     "session_id": "abc123",
+#     "skill_name": "general_assistant",
+#     "message": "User's question...",
+#     "result": "Agent's response...",
+#     ... event-specific fields
+#   }
+# }

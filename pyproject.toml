@@ -9,6 +9,7 @@ description = "Local AI agent framework with extendable SKILLs and tools"
 requires-python = ">=3.11"
 dependencies = [
     "openai>=1.0",
+    "anthropic>=0.18",
     "click>=8.0",
     "pyyaml>=6.0",
     "pydantic>=2.0",
@@ -20,6 +21,8 @@ dependencies = [
     "uvicorn>=0.27",
     "jinja2>=3.1",
     "sse-starlette>=2.0",
+    "apscheduler>=3.10",
+    "aiohttp>=3.9",
 ]
 
 [project.optional-dependencies]
