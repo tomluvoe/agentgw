@@ -29,6 +29,7 @@ system_prompt: |
 tools:
   - delegate_to_agent
 
+model: gpt-5.2-2025-12-11
 temperature: 0.3
 max_iterations: 15
 
