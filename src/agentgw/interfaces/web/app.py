@@ -184,6 +184,33 @@ def create_app(service: AgentService | None = None) -> FastAPI:
 
         return EventSourceResponse(event_generator())
 
+    @app.post(
+        "/api/run",
+        tags=["Chat"],
+        summary="Run agent to completion",
+        description="Send a message to an agent skill and receive the complete response (non-streaming)",
+    )
+    async def api_run(req: ChatRequest):
+        """Run agent to completion and return full result."""
+        try:
+            agent, session, skill = await _service.create_agent(
+                req.skill_name,
+                session_id=req.session_id,
+            )
+        except ValueError as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+
+        try:
+            result = await agent.run_to_completion(req.message)
+            return JSONResponse({
+                "result": result,
+                "session_id": session.id,
+                "skill": skill.name,
+            })
+        except Exception as e:
+            logger.exception("Agent error")
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
     @app.post("/api/route", tags=["Chat"], summary="Route message to best skill")
     async def api_route(req: ChatRequest):
         """Route a message through the planner to find the best skill."""

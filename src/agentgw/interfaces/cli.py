@@ -353,7 +353,9 @@ async def _show_history(session_id: str):
 @click.option("--port", "-p", default=8080, help="Port to bind to")
 @click.option("--reload", "do_reload", is_flag=True, help="Enable auto-reload for development")
 def web_server(host: str, port: int, do_reload: bool):
-    """Launch the web UI server."""
+    """Launch the web UI server. DEPRECATED: Use 'agentgw serve' instead."""
+    click.echo("⚠️  WARNING: 'agentgw web' is deprecated. Use 'agentgw serve' for daemon mode.", err=True)
+
     import uvicorn
     from agentgw.interfaces.web.app import create_app
 
@@ -367,6 +369,50 @@ def web_server(host: str, port: int, do_reload: bool):
         port=port,
         log_level="info",
     )
+
+
+@cli.command("serve")
+@click.option("--host", "-h", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", "-p", default=8080, help="Port to bind to")
+@click.option("--pidfile", type=click.Path(), help="PID file path")
+@click.option("--no-scheduler", is_flag=True, help="Disable scheduler")
+@click.option("--scheduler-config", type=click.Path(exists=True), help="Scheduler config file")
+def serve(host: str, port: int, pidfile: str | None, no_scheduler: bool, scheduler_config: str | None):
+    """Start agentgw daemon server (web + scheduler + API).
+
+    This is the recommended way to run agentgw for production use.
+    The daemon combines the web UI, REST API, and optional scheduler
+    in a single long-running process.
+
+    Examples:
+      agentgw serve                                    # Start with defaults
+      agentgw serve --host 0.0.0.0 --port 8080        # Bind to all interfaces
+      agentgw serve --no-scheduler                     # Disable scheduler
+      agentgw serve --pidfile /var/run/agentgw.pid    # Write PID file
+    """
+    import asyncio
+    from pathlib import Path
+    from agentgw.interfaces.server import DaemonServer
+
+    svc = _get_service()
+
+    daemon = DaemonServer(
+        service=svc,
+        pidfile=Path(pidfile) if pidfile else None,
+    )
+
+    try:
+        asyncio.run(daemon.start(
+            host=host,
+            port=port,
+            enable_scheduler=not no_scheduler,
+            scheduler_config=Path(scheduler_config) if scheduler_config else None,
+        ))
+    except KeyboardInterrupt:
+        click.echo("\nShutdown requested via Ctrl+C")
+    except Exception as e:
+        click.echo(f"Error starting daemon: {e}", err=True)
+        raise
 
 
 # ---------------------------------------------------------------------------
