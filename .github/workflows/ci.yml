@@ -18,3 +18,9 @@ jobs:
         run: uv run pytest -q -m "not harness" --tb=short
       - name: Harness
         run: uv run pytest -q -m harness --tb=short
+      - name: Coverage (harness core)
+        run: >
+          uv run pytest -q --tb=short
+          --cov=agentgw.harness --cov=agentgw.agent
+          --cov=agentgw.skills --cov=agentgw.tools
+          --cov-report=term-missing --cov-fail-under=80
