@@ -1,6 +1,6 @@
-"""Entry point for: python -m agentgw"""
+"""python -m agentgw"""
 
-from agentgw.interfaces.cli import cli
+from agentgw.channels.cli import cli
 
 if __name__ == "__main__":
     cli()

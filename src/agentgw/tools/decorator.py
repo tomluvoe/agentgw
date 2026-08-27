@@ -1,14 +1,12 @@
-"""@tool decorator for defining agent tools with auto-generated JSON schemas."""
+"""@tool decorator: OpenAI-style schemas from type hints. ctx is injected, not exposed."""
 
 from __future__ import annotations
 
 import inspect
-import json
 from typing import Any, Callable, get_args, get_origin
 
-
-# Registry of all decorated tools (populated at import time)
 _TOOL_FUNCTIONS: dict[str, ToolFunction] = {}
+_SKIP_PARAMS = frozenset({"self", "cls", "ctx", "context"})
 
 
 class ToolFunction:
@@ -21,44 +19,27 @@ class ToolFunction:
         self.schema = self._build_schema()
 
     def _python_type_to_json(self, annotation: Any) -> dict:
-        """Convert a Python type annotation to a JSON Schema type."""
         if annotation is inspect.Parameter.empty or annotation is Any:
             return {"type": "string"}
 
         origin = get_origin(annotation)
         args = get_args(annotation)
 
-        # Handle Optional (Union[X, None])
-        if origin is type(None):
-            return {"type": "string"}
-
-        # Handle list[X]
         if origin is list:
             items = self._python_type_to_json(args[0]) if args else {"type": "string"}
             return {"type": "array", "items": items}
-
-        # Handle dict[str, X]
         if origin is dict:
             return {"type": "object"}
 
-        # Handle Union types (including Optional = Union[X, None])
         import types
-        if origin is types.UnionType or (hasattr(origin, '__origin__') and str(origin) == 'typing.Union'):
+        import typing
+
+        union_origins = {types.UnionType, typing.Union}
+        if origin in union_origins:
             non_none = [a for a in args if a is not type(None)]
             if len(non_none) == 1:
                 return self._python_type_to_json(non_none[0])
             return {"type": "string"}
-
-        # Also handle typing.Union explicitly
-        try:
-            import typing
-            if origin is typing.Union:
-                non_none = [a for a in args if a is not type(None)]
-                if len(non_none) == 1:
-                    return self._python_type_to_json(non_none[0])
-                return {"type": "string"}
-        except Exception:
-            pass
 
         type_map = {
             str: {"type": "string"},
@@ -69,26 +50,20 @@ class ToolFunction:
         return type_map.get(annotation, {"type": "string"})
 
     def _build_schema(self) -> dict:
-        """Build an OpenAI-compatible function schema from the function signature."""
         sig = inspect.signature(self.func)
         doc = inspect.getdoc(self.func) or self.description
-
-        # Parse parameter descriptions from docstring Args: section
         param_docs = self._parse_param_docs(doc)
 
         properties: dict = {}
         required: list[str] = []
 
         for param_name, param in sig.parameters.items():
-            if param_name in ("self", "cls"):
+            if param_name in _SKIP_PARAMS:
                 continue
-
             prop = self._python_type_to_json(param.annotation)
             if param_name in param_docs:
                 prop["description"] = param_docs[param_name]
-
             properties[param_name] = prop
-
             if param.default is inspect.Parameter.empty:
                 required.append(param_name)
 
@@ -106,66 +81,59 @@ class ToolFunction:
         }
 
     def _parse_param_docs(self, docstring: str) -> dict[str, str]:
-        """Extract parameter descriptions from Google-style docstring Args section."""
         result: dict[str, str] = {}
         in_args = False
         current_param = None
-
         for line in docstring.split("\n"):
             stripped = line.strip()
             if stripped.lower().startswith("args:"):
                 in_args = True
                 continue
-            if in_args:
-                if stripped == "" or (not stripped.startswith(" ") and not line.startswith("\t") and ":" in stripped and not stripped.startswith("-")):
-                    # Check if this is a new section header
-                    if stripped and not stripped[0].isspace() and stripped.endswith(":"):
-                        break
-                # Check for param: description pattern
-                if ":" in stripped:
-                    parts = stripped.split(":", 1)
-                    param_name = parts[0].strip().lstrip("-").strip()
-                    if param_name and not param_name.startswith(" "):
-                        current_param = param_name
-                        result[current_param] = parts[1].strip()
-                        continue
-                if current_param and stripped:
-                    result[current_param] += " " + stripped
-
+            if not in_args:
+                continue
+            if stripped and not line[:1].isspace() and stripped.endswith(":") and " " not in stripped:
+                break
+            if ":" in stripped:
+                parts = stripped.split(":", 1)
+                param_name = parts[0].strip().lstrip("-").strip()
+                if param_name:
+                    current_param = param_name
+                    result[current_param] = parts[1].strip()
+                    continue
+            if current_param and stripped:
+                result[current_param] += " " + stripped
         return result
 
-    async def execute(self, arguments: dict) -> Any:
-        """Execute the tool function with the given arguments."""
+    async def execute(self, arguments: dict, ctx=None) -> Any:
+        sig = inspect.signature(self.func)
+        kwargs = dict(arguments)
+        if "ctx" in sig.parameters:
+            kwargs["ctx"] = ctx
+        elif "context" in sig.parameters:
+            kwargs["context"] = ctx
         if inspect.iscoroutinefunction(self.func):
-            return await self.func(**arguments)
-        return self.func(**arguments)
+            return await self.func(**kwargs)
+        return self.func(**kwargs)
 
 
-def tool(
-    name: str | None = None,
-    description: str | None = None,
-) -> Callable:
-    """Decorator that marks a function as an agent tool.
+def tool(name: str | None = None, description: str | None = None) -> Callable:
+    """Mark a function as an agent tool. `ctx` / `context` is injected at runtime."""
 
-    Args:
-        name: Tool name (defaults to function name).
-        description: Tool description (defaults to first line of docstring).
-    """
     def decorator(func: Callable) -> Callable:
         tool_name = name or func.__name__
         doc = inspect.getdoc(func) or ""
         tool_desc = description or doc.split("\n")[0] or tool_name
-
         tool_func = ToolFunction(func=func, name=tool_name, description=tool_desc)
         _TOOL_FUNCTIONS[tool_name] = tool_func
-
-        # Attach metadata to the function itself
-        func._tool = tool_func
+        func._tool = tool_func  # type: ignore[attr-defined]
         return func
 
     return decorator
 
 
 def get_registered_tools() -> dict[str, ToolFunction]:
-    """Return all registered tool functions."""
     return _TOOL_FUNCTIONS.copy()
+
+
+def clear_registered_tools() -> None:
+    _TOOL_FUNCTIONS.clear()
