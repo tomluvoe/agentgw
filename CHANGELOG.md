@@ -7,3 +7,5 @@ Rebuild as a harness. Skills are Agent Skills `SKILL.md` packs. Tools are functi
 Removed from the core: RAG/Chroma, YAML-as-agent, planner router, web UI, cron, webhooks.
 
 Install and run with `uv`.
+
+REST (`agentgw serve`), Discord, and Telegram channels all call the same harness.

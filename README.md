@@ -139,6 +139,28 @@ uv run agentgw tools --agent ./agents/demo
 
 `--workspace` changes the jail root for a run.
 
+## Channels
+
+Every interface calls `Harness.run()`. One process is bound to one `--agent`.
+
+```bash
+# HTTP
+uv sync --extra serve --group dev
+uv run agentgw serve --agent ./agents/demo --port 8080
+# POST /v1/chat  {"message": "hello", "session_id": null}
+# GET  /health  /v1/skills  /v1/tools
+
+# Discord (mention the bot in a guild, or DM it)
+uv sync --extra discord
+export DISCORD_BOT_TOKEN=...
+uv run agentgw discord --agent ./agents/demo
+
+# Telegram
+uv sync --extra telegram
+export TELEGRAM_BOT_TOKEN=...
+uv run agentgw telegram --agent ./agents/demo
+```
+
 ## Layout
 
 ```text
