@@ -1,3 +1,3 @@
-"""agentgw - Local AI agent framework with extendable SKILLs and tools."""
+"""agentgw — an agent harness for SKILL.md packs and tools."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

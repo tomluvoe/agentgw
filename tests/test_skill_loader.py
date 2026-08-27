@@ -1,100 +1,56 @@
-"""Tests for skill loading and validation."""
+from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from agentgw.core.skill_loader import SkillLoader
-
-
-@pytest.fixture
-def skills_dir(tmp_dir):
-    d = tmp_dir / "skills"
-    d.mkdir()
-    return d
+from agentgw.skills.gate import is_eligible
+from agentgw.skills.loader import discover_skills, load_skill
 
 
-def _write_skill(skills_dir: Path, name: str, content: str):
-    (skills_dir / f"{name}.yaml").write_text(content)
+def test_load_minimal_skill(tmp_path: Path):
+    skill_dir = tmp_path / "hello-world"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: hello-world\ndescription: Say hello. Use when greeting.\n---\n\nWave.\n",
+        encoding="utf-8",
+    )
+    skill = load_skill(skill_dir / "SKILL.md")
+    assert skill.name == "hello-world"
+    assert "greeting" in skill.description
+    assert skill.body == "Wave."
+    assert skill.directory == skill_dir.resolve()
 
 
-class TestSkillLoader:
-    def test_load_valid_skill(self, skills_dir):
-        _write_skill(skills_dir, "test", """
-name: test_skill
-description: A test skill
-system_prompt: You are helpful.
-tools:
-  - read_file
-temperature: 0.3
-tags:
-  - testing
-""")
-        loader = SkillLoader(skills_dir)
-        skills = loader.load_all()
+def test_discover_later_root_overrides(tmp_path: Path):
+    a = tmp_path / "a" / "greet"
+    b = tmp_path / "b" / "greet"
+    a.mkdir(parents=True)
+    b.mkdir(parents=True)
+    (a / "SKILL.md").write_text(
+        "---\nname: greet\ndescription: First copy of greet skill.\n---\nA\n",
+        encoding="utf-8",
+    )
+    (b / "SKILL.md").write_text(
+        "---\nname: greet\ndescription: Second copy of greet skill.\n---\nB\n",
+        encoding="utf-8",
+    )
+    skills = discover_skills([tmp_path / "a", tmp_path / "b"])
+    assert len(skills) == 1
+    assert skills[0].body == "B"
 
-        assert "test_skill" in skills
-        skill = skills["test_skill"]
-        assert skill.name == "test_skill"
-        assert skill.description == "A test skill"
-        assert skill.tools == ["read_file"]
-        assert skill.temperature == 0.3
-        assert skill.tags == ["testing"]
 
-    def test_load_minimal_skill(self, skills_dir):
-        _write_skill(skills_dir, "minimal", """
-name: minimal
-description: Minimal skill
-system_prompt: Be helpful.
-""")
-        loader = SkillLoader(skills_dir)
-        skills = loader.load_all()
-
-        assert "minimal" in skills
-        skill = skills["minimal"]
-        assert skill.tools == []
-        assert skill.temperature == 0.7
-        assert skill.tags == []
-
-    def test_missing_required_field(self, skills_dir):
-        _write_skill(skills_dir, "bad", """
-name: bad_skill
-description: Missing system_prompt
-""")
-        loader = SkillLoader(skills_dir)
-        skills = loader.load_all()
-        # Should skip invalid skill
-        assert "bad_skill" not in skills
-
-    def test_ignores_underscore_files(self, skills_dir):
-        _write_skill(skills_dir, "_schema", """
-name: should_ignore
-description: Schema file
-system_prompt: ignored
-""")
-        loader = SkillLoader(skills_dir)
-        skills = loader.load_all()
-        assert len(skills) == 0
-
-    def test_load_multiple_skills(self, skills_dir):
-        for i in range(3):
-            _write_skill(skills_dir, f"skill_{i}", f"""
-name: skill_{i}
-description: Skill number {i}
-system_prompt: You are skill {i}.
-""")
-        loader = SkillLoader(skills_dir)
-        skills = loader.load_all()
-        assert len(skills) == 3
-
-    def test_empty_directory(self, tmp_dir):
-        empty_dir = tmp_dir / "empty"
-        empty_dir.mkdir()
-        loader = SkillLoader(empty_dir)
-        skills = loader.load_all()
-        assert len(skills) == 0
-
-    def test_nonexistent_directory(self, tmp_dir):
-        loader = SkillLoader(tmp_dir / "nonexistent")
-        skills = loader.load_all()
-        assert len(skills) == 0
+def test_gate_missing_env(tmp_path: Path):
+    skill_dir = tmp_path / "needs-key"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: needs-key\n"
+        "description: Needs a secret env var.\n"
+        "metadata:\n"
+        "  requires:\n"
+        "    env: [TOTALLY_MISSING_AGENTGW_KEY]\n"
+        "---\n\nNope.\n",
+        encoding="utf-8",
+    )
+    skill = load_skill(skill_dir / "SKILL.md")
+    assert is_eligible(skill, environ={}) is False
+    assert is_eligible(skill, environ={"TOTALLY_MISSING_AGENTGW_KEY": "x"}) is True
