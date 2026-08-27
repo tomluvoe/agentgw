@@ -129,7 +129,7 @@ load AGENT.md → resolve skill roots & tool modules
      → LLM stream → allowed tool calls → repeat until text or max_iterations
 ```
 
-LLM providers: OpenAI, Anthropic, xAI. Set keys in `.env`. `provider` / `model` on `AGENT.md` select the backend; `--model` on the CLI overrides the model.
+LLM providers: OpenAI, Anthropic, xAI. The harness talks to them through `create_llm()`; channels never import an SDK. Set keys in `.env`. Selection order: CLI `--provider` / `--model`, then `AGENT.md`, then `AGENTGW_LLM_PROVIDER` / `AGENTGW_LLM_MODEL`.
 
 ```bash
 uv run agentgw chat --agent ./agents/demo
