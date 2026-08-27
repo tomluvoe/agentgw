@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "agentgw"
 version = "0.2.0"
 description = "Agent harness: loop, SKILL.md loading, and tool management"
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "openai>=1.0",

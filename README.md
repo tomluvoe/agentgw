@@ -228,4 +228,4 @@ Harness rebuild ([milestone](https://github.com/tomluvoe/agentgw/milestone/1)) i
 
 ## License
 
-Private — all rights reserved.
+[MIT](LICENSE)
