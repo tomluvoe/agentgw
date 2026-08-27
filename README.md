@@ -36,7 +36,10 @@ Tests:
 
 ```bash
 uv run pytest
+uv run pytest -m harness   # end-to-end: AGENT.md → skills → tools → loop
 ```
+
+CI runs both: unit tests, then a dedicated **Harness** job (`pytest -m harness`).
 
 ## Agent package
 
