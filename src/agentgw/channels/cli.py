@@ -1,4 +1,4 @@
-"""CLI channel. The only interface in v1."""
+"""CLI and channel entry points."""
 
 from __future__ import annotations
 
@@ -67,6 +67,66 @@ def list_tools(agent_path: Path):
     names = pkg.tool_policy.filter(pkg.registry.names())
     for name in names:
         click.echo(name)
+
+
+@cli.command()
+@click.option("--agent", "-a", "agent_path", required=True, type=click.Path(path_type=Path))
+@click.option("--workspace", "-w", default=None, type=click.Path(path_type=Path))
+@click.option("--provider", default=None)
+@click.option("--model", "-m", default=None)
+@click.option("--host", default="127.0.0.1")
+@click.option("--port", default=8080, type=int)
+def serve(
+    agent_path: Path,
+    workspace: Path | None,
+    provider: str | None,
+    model: str | None,
+    host: str,
+    port: int,
+):
+    """Serve the agent over HTTP (REST)."""
+    from agentgw.channels.http import serve as http_serve
+
+    harness = _harness(agent_path, workspace, model, provider)
+    try:
+        http_serve(harness, host=host, port=port)
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--agent", "-a", "agent_path", required=True, type=click.Path(path_type=Path))
+@click.option("--workspace", "-w", default=None, type=click.Path(path_type=Path))
+@click.option("--provider", default=None)
+@click.option("--model", "-m", default=None)
+def discord(agent_path: Path, workspace: Path | None, provider: str | None, model: str | None):
+    """Run the agent as a Discord bot (DISCORD_BOT_TOKEN)."""
+    from agentgw.channels.discord import run_discord
+
+    harness = _harness(agent_path, workspace, model, provider)
+    try:
+        run_discord(harness)
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--agent", "-a", "agent_path", required=True, type=click.Path(path_type=Path))
+@click.option("--workspace", "-w", default=None, type=click.Path(path_type=Path))
+@click.option("--provider", default=None)
+@click.option("--model", "-m", default=None)
+def telegram(agent_path: Path, workspace: Path | None, provider: str | None, model: str | None):
+    """Run the agent as a Telegram bot (TELEGRAM_BOT_TOKEN)."""
+    from agentgw.channels.telegram import run_telegram
+
+    harness = _harness(agent_path, workspace, model, provider)
+    try:
+        run_telegram(harness)
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
 
 
 def _harness(

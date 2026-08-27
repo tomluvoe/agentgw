@@ -1,1 +1,1 @@
-"""Interface adapters. CLI is the first channel; others call Harness.run()."""
+"""Channel adapters. All of them call Harness.run()."""
