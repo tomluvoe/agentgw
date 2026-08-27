@@ -209,15 +209,22 @@ tools/         shared extra tools
 
 ## Roadmap
 
-Tracked as GitHub issues on milestone [Harness rebuild](https://github.com/tomluvoe/agentgw/milestone/1):
+Harness rebuild ([milestone](https://github.com/tomluvoe/agentgw/milestone/1)) is done (#1–#5).
 
-0. [Harness contracts](https://github.com/tomluvoe/agentgw/issues/1) (`AgentSpec`, `SkillRecord`, `ToolPolicy`, `RunContext`)
-1. [Skill + tool management](https://github.com/tomluvoe/agentgw/issues/2) (load, gate, catalog, selector, allowlist)
-2. [Agent package, loop, CLI](https://github.com/tomluvoe/agentgw/issues/3)
-3. [LLM providers as execution backend](https://github.com/tomluvoe/agentgw/issues/4)
-4. [Channel adapters](https://github.com/tomluvoe/agentgw/issues/5) (REST, Discord, Telegram) — all call `Harness.run()`
+**Personal agent** ([milestone](https://github.com/tomluvoe/agentgw/milestone/2)):
 
-Later: MCP as a tool source, stronger sandbox, RAG as an optional layer — not inside the harness.
+1. [Attach Discord and Telegram to `serve`](https://github.com/tomluvoe/agentgw/issues/12)
+2. [Authenticate the REST API](https://github.com/tomluvoe/agentgw/issues/13)
+3. [Stream chat from the daemon](https://github.com/tomluvoe/agentgw/issues/14)
+4. [Heartbeat and cron inside `serve`](https://github.com/tomluvoe/agentgw/issues/15)
+5. [File-based memory skill](https://github.com/tomluvoe/agentgw/issues/16) (no RAG in the harness)
+
+**Later** ([milestone](https://github.com/tomluvoe/agentgw/milestone/3)):
+
+- [MCP as a tool source](https://github.com/tomluvoe/agentgw/issues/17)
+- [Sandboxed exec](https://github.com/tomluvoe/agentgw/issues/18)
+- [Skill install from git or a local pack](https://github.com/tomluvoe/agentgw/issues/19)
+- [Web chat UI as a REST client](https://github.com/tomluvoe/agentgw/issues/20)
 
 ## License
 
