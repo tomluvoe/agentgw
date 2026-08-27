@@ -30,6 +30,13 @@ cp .env.example .env   # add an API key
 uv run agentgw skills --agent ./agents/demo
 uv run agentgw run --agent ./agents/demo "hello"
 uv run agentgw chat --agent ./agents/demo
+
+# Long-running daemon + REST clients
+uv sync --extra serve --group dev
+uv run agentgw serve --agent ./agents/demo --port 8080
+# another terminal:
+export AGENTGW_URL=http://127.0.0.1:8080
+uv run agentgw chat
 ```
 
 Tests:
@@ -142,17 +149,38 @@ uv run agentgw tools --agent ./agents/demo
 
 `--workspace` changes the jail root for a run.
 
-## Channels
+## Daemon (long-running process)
 
-Every interface calls `Harness.run()`. One process is bound to one `--agent`.
+`agentgw serve` is the agent. It stays up, holds the loaded package, and exposes REST. Conversations are stored under `<workspace>/.agentgw/sessions/` so they survive a restart.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health` | liveness + agent name |
+| GET | `/v1/skills` | eligible skills |
+| GET | `/v1/tools` | allowed tools |
+| GET | `/v1/sessions` | session ids on disk |
+| POST | `/v1/chat` | `{ "message", "session_id"? }` → `{ "session_id", "response" }` |
 
 ```bash
-# HTTP
 uv sync --extra serve --group dev
-uv run agentgw serve --agent ./agents/demo --port 8080
-# POST /v1/chat  {"message": "hello", "session_id": null}
-# GET  /health  /v1/skills  /v1/tools
+uv run agentgw serve --agent ./agents/demo --host 127.0.0.1 --port 8080
+```
 
+Then attach from another process (CLI is an HTTP client, same as curl):
+
+```bash
+export AGENTGW_URL=http://127.0.0.1:8080
+uv run agentgw chat
+uv run agentgw run --session <id> "continue"
+```
+
+`--agent` is not required when talking to a daemon. Discord/Telegram still start their own process today; they do not attach to `serve` yet.
+
+## Channels
+
+Every interface calls `Harness.run()`. `serve` binds one agent package for the lifetime of the process.
+
+```bash
 # Discord (mention the bot in a guild, or DM it)
 uv sync --extra discord
 export DISCORD_BOT_TOKEN=...
