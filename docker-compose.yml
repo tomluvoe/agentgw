@@ -1,0 +1,30 @@
+services:
+  agentgw:
+    build: .
+    image: agentgw:local
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      AGENTGW_API_KEY: ${AGENTGW_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+    volumes:
+      - agent-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  agent-data:
