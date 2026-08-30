@@ -176,6 +176,8 @@ uv run agentgw run --session <id> "continue"
 
 `--agent` is not required when talking to a daemon. Discord/Telegram still start their own process today; they do not attach to `serve` yet.
 
+Set `AGENTGW_API_KEY` (or `agentgw serve --api-key`) before binding anything other than localhost. `/health` stays public; `/v1/*` then requires `Authorization: Bearer <key>`. The CLI client reads the same env var.
+
 ## Channels
 
 Every interface calls `Harness.run()`. `serve` binds one agent package for the lifetime of the process.

@@ -1,5 +1,6 @@
 """REST channel. One long-running process serves one agent package."""
 
+import os
 from typing import Any
 
 from agentgw.channels.sessions import SessionMap, handle_inbound
@@ -7,14 +8,25 @@ from agentgw.channels.store import SessionStore
 from agentgw.harness.run import Harness
 
 
-def create_app(harness: Harness, sessions: SessionMap | None = None):
+def create_app(
+    harness: Harness,
+    sessions: SessionMap | None = None,
+    api_key: str | None = None,
+):
     try:
         from fastapi import FastAPI, HTTPException
+        from fastapi.responses import JSONResponse
         from pydantic import BaseModel
+        from starlette.requests import Request
     except ImportError as e:
         raise RuntimeError(
             "Install the serve extra: uv sync --extra serve"
         ) from e
+
+    if api_key is None:
+        api_key = os.environ.get("AGENTGW_API_KEY") or None
+    if api_key == "":
+        api_key = None
 
     if sessions is None:
         store = SessionStore(harness.package.workspace / ".agentgw" / "sessions")
@@ -31,6 +43,18 @@ def create_app(harness: Harness, sessions: SessionMap | None = None):
     app = FastAPI(title="agentgw", version="0.2.0")
     app.state.harness = harness
     app.state.sessions = sessions
+    app.state.api_key = api_key
+
+    @app.middleware("http")
+    async def require_api_key(request: Request, call_next):
+        if api_key and request.url.path.startswith("/v1"):
+            header = request.headers.get("authorization") or ""
+            token = ""
+            if header.lower().startswith("bearer "):
+                token = header[7:].strip()
+            if token != api_key:
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return await call_next(request)
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -75,12 +99,19 @@ def create_app(harness: Harness, sessions: SessionMap | None = None):
     return app
 
 
-def serve(harness: Harness, host: str = "127.0.0.1", port: int = 8080) -> None:
+def serve(
+    harness: Harness,
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    api_key: str | None = None,
+) -> None:
     try:
         import uvicorn
     except ImportError as e:
         raise RuntimeError("Install the serve extra: uv sync --extra serve") from e
-    app = create_app(harness)
+    app = create_app(harness, api_key=api_key)
     print(f"agentgw daemon: agent={harness.package.name} http://{host}:{port}")
     print("Clients: AGENTGW_URL=http://%s:%s agentgw chat" % (host, port))
+    if app.state.api_key:
+        print("API key auth is ON for /v1/*  (/health stays public)")
     uvicorn.run(app, host=host, port=port)
