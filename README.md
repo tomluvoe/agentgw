@@ -161,6 +161,8 @@ uv run agentgw tools --agent ./agents/demo
 | GET | `/v1/sessions` | session ids on disk |
 | POST | `/v1/chat` | `{ "message", "session_id"? }` → `{ "session_id", "response" }` |
 | POST | `/v1/chat/stream` | SSE: `data: {"delta": "..."}` then `data: {"session_id", "done": true}` |
+| GET | `/v1/hooks` | named inbound webhooks |
+| POST | `/v1/hooks/{name}` | JSON body → a harness turn (see `hooks.yaml`) |
 
 ```bash
 uv sync --extra serve --group dev
@@ -180,6 +182,8 @@ uv run agentgw run --session <id> "continue"
 Set `AGENTGW_API_KEY` (or `agentgw serve --api-key`) before binding anything other than localhost. `/health` stays public; `/v1/*` then requires `Authorization: Bearer <key>`. The CLI client reads the same env var.
 
 Scheduled turns live in `jobs.yaml` next to `AGENT.md`. Enable a job and `serve` injects its `message` on a timer into a named session (default `heartbeat`). `GET /v1/jobs` lists them; `POST /v1/jobs/{name}/run` fires one immediately. The demo heartbeat is disabled until you flip `enabled: true`.
+
+Push events use `hooks.yaml` in the same directory. `POST /v1/hooks/github` with a JSON body runs a turn on session `hook-github` (demo). Same bearer auth as the rest of `/v1/*`.
 
 ## Docker / Raspberry Pi
 
