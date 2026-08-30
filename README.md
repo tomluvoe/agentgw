@@ -160,6 +160,7 @@ uv run agentgw tools --agent ./agents/demo
 | GET | `/v1/tools` | allowed tools |
 | GET | `/v1/sessions` | session ids on disk |
 | POST | `/v1/chat` | `{ "message", "session_id"? }` → `{ "session_id", "response" }` |
+| POST | `/v1/chat/stream` | SSE: `data: {"delta": "..."}` then `data: {"session_id", "done": true}` |
 
 ```bash
 uv sync --extra serve --group dev

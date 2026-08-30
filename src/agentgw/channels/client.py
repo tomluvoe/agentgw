@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 
@@ -59,3 +60,32 @@ class AgentClient:
             )
             response.raise_for_status()
             return response.json()
+
+    async def chat_stream(
+        self, message: str, session_id: str | None = None
+    ) -> AsyncIterator[dict[str, Any]]:
+        payload: dict[str, str] = {"message": message}
+        if session_id:
+            payload["session_id"] = session_id
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/v1/chat/stream",
+                json=payload,
+                headers=self._headers(),
+            ) as response:
+                if response.status_code != 404:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        line = line.strip()
+                        if not line.startswith("data:"):
+                            continue
+                        raw = line[5:].strip()
+                        if not raw:
+                            continue
+                        yield json.loads(raw)
+                    return
+        data = await self.chat(message, session_id=session_id)
+        if data.get("response"):
+            yield {"delta": data["response"]}
+        yield {"session_id": data["session_id"], "done": True}

@@ -274,9 +274,13 @@ async def _remote_chat(url: str, session_id: str | None) -> None:
             break
         if not stripped:
             continue
-        data = await client.chat(stripped, session_id=session_id)
-        session_id = data["session_id"]
-        click.echo(f"\nAgent> {data['response']}\n")
+        click.echo("\nAgent> ", nl=False)
+        async for event in client.chat_stream(stripped, session_id=session_id):
+            if event.get("delta"):
+                click.echo(event["delta"], nl=False)
+            if event.get("done"):
+                session_id = event.get("session_id") or session_id
+        click.echo("\n")
 
 
 async def _run_once(
@@ -291,9 +295,15 @@ async def _run_once(
     if url:
         from agentgw.channels.client import AgentClient
 
-        data = await AgentClient(url).chat(message, session_id=session_id)
-        click.echo(data["response"])
-        click.echo(f"[session {data['session_id']}]", err=True)
+        session = session_id
+        async for event in AgentClient(url).chat_stream(message, session_id=session_id):
+            if event.get("delta"):
+                click.echo(event["delta"], nl=False)
+            if event.get("done"):
+                session = event.get("session_id") or session
+        click.echo()
+        if session:
+            click.echo(f"[session {session}]", err=True)
         return
     harness = _harness(_require_agent(agent_path), workspace, model, provider)
     async for chunk in harness.run(message):

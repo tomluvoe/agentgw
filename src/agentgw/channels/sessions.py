@@ -44,3 +44,11 @@ async def handle_inbound(harness, sessions: SessionMap, key: str, text: str) -> 
     reply = await harness.run_to_completion(text, session=session)
     sessions.persist(session)
     return reply, session
+
+
+async def handle_inbound_stream(harness, sessions: SessionMap, key: str, text: str):
+    """Yield (chunk, session) then persist once the turn is done."""
+    session = sessions.get_or_create(key, harness.package.name)
+    async for chunk in harness.run(text, session=session):
+        yield chunk, session
+    sessions.persist(session)
