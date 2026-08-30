@@ -114,6 +114,12 @@ def list_tools(ctx: click.Context, agent_path: Path | None):
 @click.option("--model", "-m", default=None)
 @click.option("--host", default="127.0.0.1")
 @click.option("--port", default=8080, type=int)
+@click.option(
+    "--api-key",
+    envvar="AGENTGW_API_KEY",
+    default=None,
+    help="Bearer token for /v1/* (or AGENTGW_API_KEY). /health stays public.",
+)
 def serve(
     agent_path: Path,
     workspace: Path | None,
@@ -121,13 +127,14 @@ def serve(
     model: str | None,
     host: str,
     port: int,
+    api_key: str | None,
 ):
     """Run the agent as a long-lived daemon with a REST API."""
     from agentgw.channels.http import serve as http_serve
 
     harness = _harness(agent_path, workspace, model, provider)
     try:
-        http_serve(harness, host=host, port=port)
+        http_serve(harness, host=host, port=port, api_key=api_key)
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
