@@ -3,6 +3,7 @@
 import os
 from typing import Any
 
+from agentgw.channels.jobs import JobRunner, load_jobs
 from agentgw.channels.sessions import SessionMap, handle_inbound
 from agentgw.channels.store import SessionStore
 from agentgw.harness.run import Harness
@@ -41,9 +42,13 @@ def create_app(
         response: str
 
     app = FastAPI(title="agentgw", version="0.2.0")
+    jobs = load_jobs(harness.package.directory / "jobs.yaml")
+    runner = JobRunner(harness, sessions, jobs)
+
     app.state.harness = harness
     app.state.sessions = sessions
     app.state.api_key = api_key
+    app.state.job_runner = runner
 
     @app.middleware("http")
     async def require_api_key(request: Request, call_next):
@@ -96,6 +101,17 @@ def create_app(
         reply, session = await handle_inbound(harness, sessions, key, req.message)
         return ChatResponse(session_id=session.id, response=reply)
 
+    @app.get("/v1/jobs")
+    def list_jobs() -> dict[str, Any]:
+        return {"jobs": runner.list_jobs()}
+
+    @app.post("/v1/jobs/{name}/run")
+    async def run_job(name: str) -> dict[str, Any]:
+        try:
+            return await runner.run(name)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Unknown job: {name}")
+
     return app
 
 
@@ -110,8 +126,16 @@ def serve(
     except ImportError as e:
         raise RuntimeError("Install the serve extra: uv sync --extra serve") from e
     app = create_app(harness, api_key=api_key)
+    runner = app.state.job_runner
+    runner.start()
     print(f"agentgw daemon: agent={harness.package.name} http://{host}:{port}")
     print("Clients: AGENTGW_URL=http://%s:%s agentgw chat" % (host, port))
     if app.state.api_key:
         print("API key auth is ON for /v1/*  (/health stays public)")
-    uvicorn.run(app, host=host, port=port)
+    enabled = [j for j in runner.list_jobs() if j["enabled"]]
+    if enabled:
+        print(f"Jobs: {', '.join(j['name'] for j in enabled)}")
+    try:
+        uvicorn.run(app, host=host, port=port)
+    finally:
+        runner.stop()

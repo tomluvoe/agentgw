@@ -1,0 +1,10 @@
+# Heartbeat is off by default so `serve` is quiet until you enable it.
+jobs:
+  - name: watch-heartbeat
+    enabled: false
+    every_seconds: 3600
+    session: heartbeat
+    message: >
+      Read memory/WATCH.md if it exists. For each item that looks due, do
+      what it says. If the file is missing or nothing is due, reply
+      HEARTBEAT_OK and stop.
