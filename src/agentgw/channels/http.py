@@ -4,6 +4,7 @@ import json
 import os
 from typing import Any
 
+from agentgw.channels.hooks import HookRunner, load_hooks
 from agentgw.channels.jobs import JobRunner, load_jobs
 from agentgw.channels.sessions import SessionMap, handle_inbound, handle_inbound_stream
 from agentgw.channels.store import SessionStore
@@ -45,11 +46,14 @@ def create_app(
     app = FastAPI(title="agentgw", version="0.2.0")
     jobs = load_jobs(harness.package.directory / "jobs.yaml")
     runner = JobRunner(harness, sessions, jobs)
+    hooks = load_hooks(harness.package.directory / "hooks.yaml")
+    hook_runner = HookRunner(harness, sessions, hooks)
 
     app.state.harness = harness
     app.state.sessions = sessions
     app.state.api_key = api_key
     app.state.job_runner = runner
+    app.state.hook_runner = hook_runner
 
     @app.middleware("http")
     async def require_api_key(request: Request, call_next):
@@ -142,6 +146,23 @@ def create_app(
             return await runner.run(name)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"Unknown job: {name}")
+
+    @app.get("/v1/hooks")
+    def list_hooks() -> dict[str, Any]:
+        return {"hooks": hook_runner.list_hooks()}
+
+    @app.post("/v1/hooks/{name}")
+    async def fire_hook(name: str, request: Request) -> dict[str, Any]:
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        try:
+            return await hook_runner.run(name, payload)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Unknown hook: {name}")
+        except PermissionError:
+            raise HTTPException(status_code=403, detail=f"Hook disabled: {name}")
 
     return app
 

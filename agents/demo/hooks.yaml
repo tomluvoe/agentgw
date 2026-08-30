@@ -1,0 +1,11 @@
+hooks:
+  - name: github
+    session: hook-github
+    enabled: true
+    template: |
+      GitHub webhook `{name}` received.
+      Payload:
+      {payload}
+
+      If this matches an item in memory/WATCH.md, act. Otherwise
+      acknowledge in one sentence.
