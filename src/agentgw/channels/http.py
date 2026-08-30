@@ -1,10 +1,11 @@
 """REST channel. One long-running process serves one agent package."""
 
+import json
 import os
 from typing import Any
 
 from agentgw.channels.jobs import JobRunner, load_jobs
-from agentgw.channels.sessions import SessionMap, handle_inbound
+from agentgw.channels.sessions import SessionMap, handle_inbound, handle_inbound_stream
 from agentgw.channels.store import SessionStore
 from agentgw.harness.run import Harness
 
@@ -16,7 +17,7 @@ def create_app(
 ):
     try:
         from fastapi import FastAPI, HTTPException
-        from fastapi.responses import JSONResponse
+        from fastapi.responses import JSONResponse, StreamingResponse
         from pydantic import BaseModel
         from starlette.requests import Request
     except ImportError as e:
@@ -100,6 +101,36 @@ def create_app(
             sessions.put(key, session)
         reply, session = await handle_inbound(harness, sessions, key, req.message)
         return ChatResponse(session_id=session.id, response=reply)
+
+    @app.post("/v1/chat/stream")
+    async def chat_stream(req: ChatRequest):
+        if not req.message.strip():
+            raise HTTPException(status_code=400, detail="message is required")
+        key = req.session_id or ""
+        if not key:
+            from agentgw.harness.session import Session
+
+            session = Session.create(harness.package.name)
+            key = session.id
+            sessions.put(key, session)
+
+        async def events():
+            async for chunk, session in handle_inbound_stream(
+                harness, sessions, key, req.message
+            ):
+                if chunk:
+                    yield f"data: {json.dumps({'delta': chunk})}\n\n"
+            session = sessions.get_or_create(key, harness.package.name)
+            yield f"data: {json.dumps({'session_id': session.id, 'done': True})}\n\n"
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.get("/v1/jobs")
     def list_jobs() -> dict[str, Any]:
