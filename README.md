@@ -178,6 +178,8 @@ uv run agentgw run --session <id> "continue"
 
 Set `AGENTGW_API_KEY` (or `agentgw serve --api-key`) before binding anything other than localhost. `/health` stays public; `/v1/*` then requires `Authorization: Bearer <key>`. The CLI client reads the same env var.
 
+Scheduled turns live in `jobs.yaml` next to `AGENT.md`. Enable a job and `serve` injects its `message` on a timer into a named session (default `heartbeat`). `GET /v1/jobs` lists them; `POST /v1/jobs/{name}/run` fires one immediately. The demo heartbeat is disabled until you flip `enabled: true`.
+
 ## Docker / Raspberry Pi
 
 The daemon is meant to run as a container. LLM calls stay in the cloud; the box only holds HTTP, files, and (later) timers. Use a **64-bit** Pi 4/5 (`linux/arm64`). 32-bit Pi OS is not a target.
