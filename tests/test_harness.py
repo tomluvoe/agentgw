@@ -91,7 +91,7 @@ async def test_text_reply_sends_catalog_and_tools(tmp_path: Path):
     assert result == "hello from harness"
     assert llm.calls
     names = _tool_names(llm.calls[0])
-    for expected in ("read", "write", "list_dir", "exec", "echo"):
+    for expected in ("read", "write", "list_dir", "exec", "echo", "notify"):
         assert expected in names
     system = _system(llm.calls[0])
     assert "You are a local demo assistant" in system
@@ -314,7 +314,7 @@ def test_cli_skills_and_tools():
     assert "memory" in skills.output
     tools = runner.invoke(cli, ["tools", "-a", str(DEMO_AGENT)])
     assert tools.exit_code == 0, tools.output
-    for name in ("read", "write", "list_dir", "exec", "echo"):
+    for name in ("read", "write", "list_dir", "exec", "echo", "notify"):
         assert name in tools.output
 
 

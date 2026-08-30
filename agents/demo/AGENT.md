@@ -17,6 +17,7 @@ tools:
     - list_dir
     - exec
     - echo
+    - notify
   modules:
     - ../../tools
 ---
