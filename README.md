@@ -178,6 +178,26 @@ uv run agentgw run --session <id> "continue"
 
 Set `AGENTGW_API_KEY` (or `agentgw serve --api-key`) before binding anything other than localhost. `/health` stays public; `/v1/*` then requires `Authorization: Bearer <key>`. The CLI client reads the same env var.
 
+## Docker / Raspberry Pi
+
+The daemon is meant to run as a container. LLM calls stay in the cloud; the box only holds HTTP, files, and (later) timers. Use a **64-bit** Pi 4/5 (`linux/arm64`). 32-bit Pi OS is not a target.
+
+```bash
+cp .env.example .env   # API keys
+docker compose up -d --build
+curl -s http://127.0.0.1:8080/health
+```
+
+Sessions and workspace files live in the `agent-data` volume (`/data` in the container). Recreating the container keeps them.
+
+On a Pi, build locally (native arm64) or copy an image built with:
+
+```bash
+docker buildx build --platform linux/arm64 -t agentgw:local .
+```
+
+Set `AGENTGW_API_KEY` if the port is reachable off localhost.
+
 ## Channels
 
 Every interface calls `Harness.run()`. `serve` binds one agent package for the lifetime of the process.
@@ -220,6 +240,9 @@ Harness rebuild ([milestone](https://github.com/tomluvoe/agentgw/milestone/1)) i
 3. [Stream chat from the daemon](https://github.com/tomluvoe/agentgw/issues/14)
 4. [Heartbeat and cron inside `serve`](https://github.com/tomluvoe/agentgw/issues/15)
 5. [File-based memory skill](https://github.com/tomluvoe/agentgw/issues/16) (no RAG in the harness)
+6. [Docker image and compose (linux/arm64)](https://github.com/tomluvoe/agentgw/issues/23)
+7. [Inbound webhooks for watches](https://github.com/tomluvoe/agentgw/issues/24)
+8. [Notify tool](https://github.com/tomluvoe/agentgw/issues/25)
 
 **Later** ([milestone](https://github.com/tomluvoe/agentgw/milestone/3)):
 

@@ -1,0 +1,13 @@
+.venv
+.git
+.github
+.pytest_cache
+.coverage
+htmlcov
+**/__pycache__
+**/*.pyc
+src/agentgw.egg-info
+data
+.agentgw
+tests
+.env

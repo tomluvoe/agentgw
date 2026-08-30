@@ -24,3 +24,10 @@ jobs:
           --cov=agentgw.harness --cov=agentgw.agent
           --cov=agentgw.skills --cov=agentgw.tools
           --cov-report=term-missing --cov-fail-under=80
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build container
+        run: docker build -t agentgw:ci .
