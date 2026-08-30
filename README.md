@@ -79,7 +79,7 @@ skills:
   allow: []                 # empty = all eligible skills in those roots
   max_activated: 3
 tools:
-  allow: [read, write, list_dir, exec, echo]
+  allow: [read, write, list_dir, exec, echo, notify]
   modules:
     - ../../tools           # shared
     # - tools               # optional agent-local modules
@@ -113,6 +113,9 @@ Harness builtins (always registered, still subject to the agent allow/deny list)
 | `write` | Write a file inside the workspace |
 | `list_dir` | List files inside the workspace |
 | `exec` | Run a shell command with cwd = workspace |
+| `notify` | Ping the operator (webhook / Discord webhook / Telegram) |
+
+`notify` posts to whatever sinks you set in env: `NOTIFY_WEBHOOK_URL` (JSON `{text, content}`), `DISCORD_WEBHOOK_URL` (`{content}`), and/or `TELEGRAM_BOT_TOKEN` + `NOTIFY_CHAT_ID`. Cron, hooks, and chat can ping you without an open Discord/Telegram session.
 
 Extra tools are ordinary Python:
 
@@ -181,7 +184,7 @@ uv run agentgw run --session <id> "continue"
 
 Set `AGENTGW_API_KEY` (or `agentgw serve --api-key`) before binding anything other than localhost. `/health` stays public; `/v1/*` then requires `Authorization: Bearer <key>`. The CLI client reads the same env var.
 
-Scheduled turns live in `jobs.yaml` next to `AGENT.md`. Enable a job and `serve` injects its `message` on a timer into a named session (default `heartbeat`). `GET /v1/jobs` lists them; `POST /v1/jobs/{name}/run` fires one immediately. The demo heartbeat is disabled until you flip `enabled: true`.
+Scheduled turns live in `jobs.yaml` next to `AGENT.md`. Enable a job and `serve` injects its `message` on a timer into a named session (default `heartbeat`). `GET /v1/jobs` lists them; `POST /v1/jobs/{name}/run` fires one immediately. The demo heartbeat is disabled until you flip `enabled: true`. A watch item can tell the agent to call `notify` when something is due.
 
 Push events use `hooks.yaml` in the same directory. `POST /v1/hooks/github` with a JSON body runs a turn on session `hook-github` (demo). Same bearer auth as the rest of `/v1/*`.
 

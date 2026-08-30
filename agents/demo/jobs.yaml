@@ -6,5 +6,5 @@ jobs:
     session: heartbeat
     message: >
       Read memory/WATCH.md if it exists. For each item that looks due, do
-      what it says. If the file is missing or nothing is due, reply
-      HEARTBEAT_OK and stop.
+      what it says. If a then-clause says to ping you, call the notify tool.
+      If the file is missing or nothing is due, reply HEARTBEAT_OK and stop.

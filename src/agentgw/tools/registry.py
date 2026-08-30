@@ -22,11 +22,12 @@ def reset_builtin_tools() -> None:
     """Clear the global @tool registry and re-import harness builtins."""
     import importlib
 
-    from agentgw.tools.builtins import fs, shell
+    from agentgw.tools.builtins import fs, notify, shell
 
     clear_registered_tools()
     importlib.reload(fs)
     importlib.reload(shell)
+    importlib.reload(notify)
 
 logger = logging.getLogger(__name__)
 
