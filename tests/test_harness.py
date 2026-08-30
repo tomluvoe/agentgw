@@ -79,7 +79,7 @@ def _write_agent(
 def test_from_path_loads_demo(tmp_path: Path):
     harness = Harness.from_path(DEMO_AGENT, ScriptedLLM(["x"]), workspace=tmp_path)
     names = {s.name for s in harness.package.skills}
-    assert {"greet", "workspace-notes", "echo-helper"} <= names
+    assert {"greet", "workspace-notes", "echo-helper", "memory"} <= names
     assert harness.package.workspace == tmp_path.resolve()
 
 
@@ -98,7 +98,31 @@ async def test_text_reply_sends_catalog_and_tools(tmp_path: Path):
     assert "<available_skills>" in system
     assert "<name>greet</name>" in system
     assert "<name>workspace-notes</name>" in system
+    assert "<name>memory</name>" in system
     assert "### greet" not in system
+
+
+@pytest.mark.asyncio
+async def test_remember_injects_memory_skill_and_writes(tmp_path: Path):
+    llm = ScriptedLLM(
+        [
+            (
+                "write",
+                '{"path": "memory/MEMORY.md", "content": "- coffee: oat milk\\n"}',
+            ),
+            "Noted: oat milk.",
+        ]
+    )
+    harness = Harness.from_path(DEMO_AGENT, llm, workspace=tmp_path)
+    result = await harness.run_to_completion(
+        "please remember that my coffee is oat milk"
+    )
+    assert "oat milk" in result.lower() or "Noted" in result
+    system = _system(llm.calls[0])
+    assert "### memory" in system
+    assert (tmp_path / "memory" / "MEMORY.md").read_text(encoding="utf-8").find(
+        "oat milk"
+    ) != -1
 
 
 @pytest.mark.asyncio
@@ -287,6 +311,7 @@ def test_cli_skills_and_tools():
     assert skills.exit_code == 0, skills.output
     assert "greet" in skills.output
     assert "workspace-notes" in skills.output
+    assert "memory" in skills.output
     tools = runner.invoke(cli, ["tools", "-a", str(DEMO_AGENT)])
     assert tools.exit_code == 0, tools.output
     for name in ("read", "write", "list_dir", "exec", "echo"):
