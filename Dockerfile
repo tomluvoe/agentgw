@@ -8,7 +8,7 @@ COPY agents ./agents
 COPY skills ./skills
 COPY tools ./tools
 
-RUN uv sync --frozen --extra serve --no-dev \
+RUN uv sync --frozen --extra serve --extra discord --extra telegram --no-dev \
     && mkdir -p /data
 
 ENV PATH="/app/.venv/bin:$PATH" \

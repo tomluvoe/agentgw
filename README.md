@@ -180,7 +180,7 @@ uv run agentgw chat
 uv run agentgw run --session <id> "continue"
 ```
 
-`--agent` is not required when talking to a daemon. Discord/Telegram still start their own process today; they do not attach to `serve` yet.
+`--agent` is not required when talking to a daemon. Discord and Telegram attach to `serve` when their bot tokens are set (same session store as `agentgw chat --url`). Or run them as HTTP clients of another host: `AGENTGW_URL=http://pi:8080 agentgw discord`.
 
 Set `AGENTGW_API_KEY` (or `agentgw serve --api-key`) before binding anything other than localhost. `/health` stays public; `/v1/*` then requires `Authorization: Bearer <key>`. The CLI client reads the same env var.
 
@@ -210,19 +210,24 @@ Set `AGENTGW_API_KEY` if the port is reachable off localhost.
 
 ## Channels
 
-Every interface calls `Harness.run()`. `serve` binds one agent package for the lifetime of the process.
+Every interface calls `Harness.run()` (or `POST /v1/chat` on a running daemon). `serve` binds one agent package for the lifetime of the process. Set `DISCORD_BOT_TOKEN` and/or `TELEGRAM_BOT_TOKEN` and the daemon starts those adapters on the same session store.
+
+A Discord channel maps to session `discord-{channel_id}`; a Telegram chat maps to `telegram-{chat_id}`. Resume from CLI with `--session discord-123`.
 
 ```bash
-# Discord (mention the bot in a guild, or DM it)
-uv sync --extra discord
+# Same process as serve (preferred)
+uv sync --extra serve --extra discord --extra telegram --group dev
 export DISCORD_BOT_TOKEN=...
-uv run agentgw discord --agent ./agents/demo
-
-# Telegram
-uv sync --extra telegram
 export TELEGRAM_BOT_TOKEN=...
-uv run agentgw telegram --agent ./agents/demo
+uv run agentgw serve --agent ./agents/demo --port 8080
+
+# Bots on another host, talking to the daemon
+export AGENTGW_URL=http://127.0.0.1:8080
+uv run agentgw discord
+uv run agentgw telegram
 ```
+
+Mention the Discord bot in a guild, or DM it. Telegram: send it a message.
 
 ## Layout
 
