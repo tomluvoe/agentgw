@@ -141,37 +141,68 @@ def serve(
 
 
 @cli.command()
-@click.option("--agent", "-a", "agent_path", required=True, type=click.Path(path_type=Path))
+@click.option("--agent", "-a", "agent_path", default=None, type=click.Path(path_type=Path))
 @click.option("--workspace", "-w", default=None, type=click.Path(path_type=Path))
 @click.option("--provider", default=None)
 @click.option("--model", "-m", default=None)
-def discord(agent_path: Path, workspace: Path | None, provider: str | None, model: str | None):
-    """Run the agent as a Discord bot (DISCORD_BOT_TOKEN)."""
+@click.pass_context
+def discord(
+    ctx: click.Context,
+    agent_path: Path | None,
+    workspace: Path | None,
+    provider: str | None,
+    model: str | None,
+):
+    """Discord adapter (DISCORD_BOT_TOKEN). Uses the daemon when --url is set."""
     from agentgw.channels.discord import run_discord
 
-    harness = _harness(agent_path, workspace, model, provider)
     try:
-        run_discord(harness)
+        run_discord(**_channel_kwargs(ctx, agent_path, workspace, provider, model))
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 
 @cli.command()
-@click.option("--agent", "-a", "agent_path", required=True, type=click.Path(path_type=Path))
+@click.option("--agent", "-a", "agent_path", default=None, type=click.Path(path_type=Path))
 @click.option("--workspace", "-w", default=None, type=click.Path(path_type=Path))
 @click.option("--provider", default=None)
 @click.option("--model", "-m", default=None)
-def telegram(agent_path: Path, workspace: Path | None, provider: str | None, model: str | None):
-    """Run the agent as a Telegram bot (TELEGRAM_BOT_TOKEN)."""
+@click.pass_context
+def telegram(
+    ctx: click.Context,
+    agent_path: Path | None,
+    workspace: Path | None,
+    provider: str | None,
+    model: str | None,
+):
+    """Telegram adapter (TELEGRAM_BOT_TOKEN). Uses the daemon when --url is set."""
     from agentgw.channels.telegram import run_telegram
 
-    harness = _harness(agent_path, workspace, model, provider)
     try:
-        run_telegram(harness)
+        run_telegram(**_channel_kwargs(ctx, agent_path, workspace, provider, model))
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+
+def _channel_kwargs(
+    ctx: click.Context,
+    agent_path: Path | None,
+    workspace: Path | None,
+    provider: str | None,
+    model: str | None,
+) -> dict:
+    url = ctx.obj.get("url")
+    if url:
+        return {"url": url}
+    harness = _harness(_require_agent(agent_path), workspace, model, provider)
+    click.echo(
+        "Warning: running this channel in-process. Prefer `agentgw serve` "
+        "(token in env) or --url so sessions are shared with the daemon.",
+        err=True,
+    )
+    return {"harness": harness}
 
 
 def _require_agent(agent_path: Path | None) -> Path:

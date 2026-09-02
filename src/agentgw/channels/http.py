@@ -2,6 +2,7 @@
 
 import json
 import os
+from contextlib import asynccontextmanager
 from typing import Any
 
 from agentgw.channels.hooks import HookRunner, load_hooks
@@ -15,6 +16,7 @@ def create_app(
     harness: Harness,
     sessions: SessionMap | None = None,
     api_key: str | None = None,
+    enable_channels: bool = False,
 ):
     try:
         from fastapi import FastAPI, HTTPException
@@ -43,7 +45,22 @@ def create_app(
         session_id: str
         response: str
 
-    app = FastAPI(title="agentgw", version="0.2.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        bots = None
+        if enable_channels:
+            from agentgw.channels.bots import ChannelBots
+
+            bots = ChannelBots(harness, sessions)
+            started = await bots.start()
+            app.state.bots = bots
+            if started:
+                print("Channels: " + ", ".join(started))
+        yield
+        if bots is not None:
+            await bots.stop()
+
+    app = FastAPI(title="agentgw", version="0.2.0", lifespan=lifespan)
     jobs = load_jobs(harness.package.directory / "jobs.yaml")
     runner = JobRunner(harness, sessions, jobs)
     hooks = load_hooks(harness.package.directory / "hooks.yaml")
@@ -54,6 +71,7 @@ def create_app(
     app.state.api_key = api_key
     app.state.job_runner = runner
     app.state.hook_runner = hook_runner
+    app.state.bots = None
 
     @app.middleware("http")
     async def require_api_key(request: Request, call_next):
@@ -177,11 +195,12 @@ def serve(
         import uvicorn
     except ImportError as e:
         raise RuntimeError("Install the serve extra: uv sync --extra serve") from e
-    app = create_app(harness, api_key=api_key)
+    app = create_app(harness, api_key=api_key, enable_channels=True)
     runner = app.state.job_runner
     runner.start()
     print(f"agentgw daemon: agent={harness.package.name} http://{host}:{port}")
     print("Clients: AGENTGW_URL=http://%s:%s agentgw chat" % (host, port))
+    print("Discord/Telegram attach when DISCORD_BOT_TOKEN / TELEGRAM_BOT_TOKEN are set")
     if app.state.api_key:
         print("API key auth is ON for /v1/*  (/health stays public)")
     enabled = [j for j in runner.list_jobs() if j["enabled"]]
